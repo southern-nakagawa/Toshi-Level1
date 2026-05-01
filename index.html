@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>理論株価スクリーナー</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg:#0b0f1a; --card:#141824; --border:#1e2535;
+  --text:#dde3f0; --muted:#64748b;
+  --accent:#3b82f6; --green:#10b981; --red:#ef4444;
+  --amber:#f59e0b; --gold:#eab308;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:'Hiragino Kaku Gothic ProN','Yu Gothic',sans-serif;font-size:14px;min-height:100vh}
+.hidden{display:none!important}
+
+/* ── 接続画面 ── */
+#connect-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;
+  background:radial-gradient(ellipse at 30% 40%,#0f1f3d,#0b0f1a 70%)}
+.connect-card{background:var(--card);border:1px solid var(--border);border-radius:16px;
+  padding:48px 40px;width:440px;text-align:center;box-shadow:0 0 60px rgba(59,130,246,.08)}
+.connect-card h1{font-size:22px;font-weight:700;color:#fff;margin-bottom:6px}
+.connect-card .sub{color:var(--muted);font-size:12px;margin-bottom:28px}
+.connect-card label{display:block;text-align:left;font-size:12px;color:var(--muted);margin-bottom:6px}
+.connect-card input[type=password]{width:100%;padding:10px 14px;background:#0d1120;
+  border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:monospace}
+.connect-card input:focus{outline:none;border-color:var(--accent)}
+.help{font-size:11px;color:var(--muted);margin-top:8px;text-align:left;line-height:1.7}
+.help a{color:var(--accent)}
+.btn-primary{margin-top:24px;width:100%;padding:12px;background:var(--accent);color:#fff;
+  border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;transition:background .15s}
+.btn-primary:hover{background:#2563eb}
+.btn-primary:disabled{background:#334155;cursor:not-allowed}
+.error-msg{margin-top:12px;color:var(--red);font-size:12px;min-height:18px}
+
+/* ── ヘッダー ── */
+header{display:flex;align-items:center;justify-content:space-between;
+  padding:0 24px;height:56px;background:var(--card);
+  border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10}
+header h1{font-size:16px;font-weight:700;color:#fff}
+.badge-ok{color:var(--green);font-size:12px}
+.btn-sm{padding:5px 14px;background:transparent;border:1px solid var(--border);
+  color:var(--muted);border-radius:6px;cursor:pointer;font-size:12px;transition:all .15s}
+.btn-sm:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ── フィルタ ── */
+.filter-panel{background:var(--card);border-bottom:1px solid var(--border);
+  padding:14px 24px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}
+.fg{display:flex;flex-direction:column;gap:4px}
+.fg label{font-size:11px;color:var(--muted);white-space:nowrap}
+.fg select,.fg input[type=number]{padding:6px 10px;background:#0d1120;border:1px solid var(--border);
+  border-radius:6px;color:var(--text);font-size:13px;width:140px}
+.fg select:focus,.fg input:focus{outline:none;border-color:var(--accent)}
+.fg.chk{flex-direction:row;align-items:center;gap:6px}
+.fg.chk label{font-size:12px;color:var(--text);margin:0;white-space:nowrap}
+.btn-screen{padding:8px 24px;background:var(--accent);color:#fff;border:none;
+  border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s;
+  white-space:nowrap;align-self:flex-end}
+.btn-screen:hover{background:#2563eb}
+.btn-screen:disabled{background:#334155;cursor:not-allowed}
+
+/* ── レイアウト ── */
+#main-layout{display:flex;height:calc(100vh - 56px - 62px)}
+
+/* ── 結果テーブル ── */
+#results-pane{flex:1;overflow-y:auto;padding:14px 20px}
+.results-meta{font-size:12px;color:var(--muted);margin-bottom:10px}
+.results-meta strong{color:var(--text)}
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead th{padding:8px 10px;background:#0d1120;color:var(--muted);text-align:right;
+  border-bottom:1px solid var(--border);white-space:nowrap;font-weight:500;
+  position:sticky;top:0;z-index:1}
+thead th:first-child,thead th:nth-child(2){text-align:left}
+tbody tr{border-bottom:1px solid #141824;cursor:pointer;transition:background .1s}
+tbody tr:hover{background:#1a2035}
+tbody tr.active{background:#1e2a45}
+td{padding:7px 10px;text-align:right;white-space:nowrap}
+td:first-child,td:nth-child(2){text-align:left}
+td:first-child{font-family:monospace;color:var(--accent);font-size:13px}
+td:nth-child(2){max-width:160px;overflow:hidden;text-overflow:ellipsis}
+.lbadge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;color:#000}
+.num{font-family:'Courier New',monospace}
+.pos{color:var(--green)} .neg{color:var(--red)} .muted{color:var(--muted)}
+
+/* ── ローディング ── */
+.loading-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:60px;gap:14px}
+.spinner{width:34px;height:34px;border:3px solid var(--border);border-top-color:var(--accent);
+  border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-text{color:var(--muted);font-size:13px}
+.placeholder{text-align:center;padding:60px;color:var(--muted);font-size:13px}
+
+/* ── 詳細パネル ── */
+#detail-pane{width:440px;min-width:440px;border-left:1px solid var(--border);
+  background:var(--card);overflow-y:auto}
+.detail-header{padding:16px 20px;border-bottom:1px solid var(--border);
+  display:flex;align-items:flex-start;justify-content:space-between}
+.d-code{font-family:monospace;font-size:12px;color:var(--accent)}
+.d-name{font-size:16px;font-weight:700;color:#fff;margin-top:2px}
+.d-sub{font-size:11px;color:var(--muted);margin-top:3px}
+.close-btn{background:none;border:none;color:var(--muted);font-size:18px;
+  cursor:pointer;padding:0 4px;line-height:1}
+.close-btn:hover{color:var(--text)}
+.metric-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border)}
+.mc{background:var(--card);padding:12px 16px}
+.mc.hl{background:#0f1929}
+.mc.full{grid-column:1/-1}
+.mc .ml{font-size:10px;color:var(--muted);margin-bottom:4px}
+.mc .mv{font-size:20px;font-weight:700;font-family:'Courier New',monospace}
+.mc .ms{font-size:11px;color:var(--muted);margin-top:2px}
+.bar-wrap{padding:14px 20px;border-bottom:1px solid var(--border)}
+.bar-wrap h4{font-size:11px;color:var(--muted);margin-bottom:10px}
+.bar-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.bar-lbl{font-size:11px;color:var(--muted);width:60px;text-align:right;white-space:nowrap}
+.bar-bg{flex:1;height:8px;background:#0d1120;border-radius:4px;overflow:hidden}
+.bar-fill{height:100%;border-radius:4px;transition:width .4s}
+.bar-val{font-size:11px;font-family:monospace;width:76px}
+.chart-wrap{padding:12px 16px;border-bottom:1px solid var(--border)}
+.chart-wrap h4{font-size:11px;color:var(--muted);margin-bottom:8px}
+.hist-wrap{padding:12px 16px}
+.hist-wrap h4{font-size:11px;color:var(--muted);margin-bottom:8px}
+.hist-tbl{width:100%;font-size:11px;border-collapse:collapse}
+.hist-tbl th{color:var(--muted);text-align:right;padding:4px 6px;font-weight:400}
+.hist-tbl th:first-child{text-align:left}
+.hist-tbl td{text-align:right;padding:4px 6px;border-top:1px solid var(--border);font-family:monospace}
+.hist-tbl td:first-child{text-align:left;font-family:sans-serif;color:var(--muted)}
+.empty-detail{display:flex;align-items:center;justify-content:center;
+  height:100%;color:var(--muted);font-size:13px;text-align:center;padding:40px}
+</style>
+</head>
+<body>
+
+<!-- 接続画面 -->
+<div id="connect-screen">
+  <div class="connect-card">
+    <h1>📊 理論株価スクリーナー</h1>
+    <p class="sub">はっしゃん式 × J-Quants API × 中期投資特化</p>
+    <div style="margin-bottom:4px">
+      <label>J-Quants リフレッシュトークン</label>
+      <input type="password" id="token-input" placeholder="リフレッシュトークンを貼り付け…" autocomplete="off">
+    </div>
+    <p class="help">
+      ⚠️ トークンはブラウザのメモリのみ保持。<br>
+      タブを閉じると自動消去されます（ファイル保存なし）。<br>
+      ローカルで <code style="color:var(--accent)">python3 proxy.py</code> を起動した状態で使用してください。<br>
+      トークンは <a href="https://jpx-jquants.com/ja" target="_blank">J-Quants</a> ダッシュボードから取得。
+    </p>
+    <button class="btn-primary" id="connect-btn">接続する</button>
+    <div class="error-msg" id="connect-err"></div>
+  </div>
+</div>
+
+<!-- メイン画面 -->
+<div id="main-screen" class="hidden">
+  <header>
+    <h1>📊 理論株価スクリーナー</h1>
+    <div style="display:flex;align-items:center;gap:12px">
+      <span class="badge-ok">● 接続中</span>
+      <button class="btn-sm" id="disconnect-btn">切断</button>
+    </div>
+  </header>
+
+  <div class="filter-panel">
+    <div class="fg"><label>市場</label>
+      <select id="f-market"><option value="">すべて</option></select></div>
+    <div class="fg"><label>業種（33業種）</label>
+      <select id="f-sector"><option value="">すべて</option></select></div>
+    <div class="fg"><label>α値 下限 (%)</label>
+      <input type="number" id="f-mina" value="10"></div>
+    <div class="fg"><label>α値 上限 (%)</label>
+      <input type="number" id="f-maxa" value="200"></div>
+    <div class="fg"><label>自己資本比率 下限 (%)</label>
+      <input type="number" id="f-eq" value="30"></div>
+    <div class="fg"><label>ROA 下限 (%)</label>
+      <input type="number" id="f-roa" value="0"></div>
+    <div class="fg"><label>ソート</label>
+      <select id="f-sort">
+        <option value="alpha">α値（高い順）</option>
+        <option value="roa">ROA（高い順）</option>
+        <option value="eq">自己資本比率（高い順）</option>
+      </select></div>
+    <div class="fg chk">
+      <input type="checkbox" id="f-notrap" checked>
+      <label for="f-notrap">バリュートラップ除外</label></div>
+    <button class="btn-screen" id="screen-btn">スクリーニング実行</button>
+  </div>
+
+  <div id="main-layout">
+    <div id="results-pane">
+      <div id="results-meta" class="results-meta hidden"></div>
+      <div id="loading" class="loading-wrap hidden">
+        <div class="spinner"></div>
+        <div class="loading-text" id="loading-text">データ取得中（初回は数分かかります）…</div>
+      </div>
+      <div id="placeholder" class="placeholder">条件を設定してスクリーニングを実行してください</div>
+      <table id="results-table" class="hidden">
+        <thead><tr>
+          <th>コード</th><th>銘柄名</th>
+          <th>株価</th><th>理論株価</th><th>α値</th><th>水準</th>
+          <th>上限株価</th><th>資産価値</th><th>事業価値</th>
+          <th>BPS</th><th>予想EPS</th><th>ROA%</th><th>自己資本比率%</th><th>PBR</th>
+          <th>業種</th>
+        </tr></thead>
+        <tbody id="results-tbody"></tbody>
+      </table>
+    </div>
+    <div id="detail-pane">
+      <div class="empty-detail" id="d-empty">銘柄を選択すると詳細が表示されます</div>
+      <div id="d-content" class="hidden"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// 設定
+// ============================================================
+const PROXY = "http://localhost:8765";
+
+// ============================================================
+// はっしゃん式 理論株価
+// ============================================================
+function eqRate(eq){ return eq>=.8?.8:eq>=.67?.75:eq>=.5?.7:eq>=.33?.65:eq>=.1?.6:.5 }
+function lev(eq){ return 1/Math.min(1,Math.max(.66,eq+.33)) }
+function riskRate(pbr){
+  if(pbr>=.5)return 0; if(pbr>=.41)return .2; if(pbr>=.34)return .33;
+  if(pbr>=.25)return .5; if(pbr>=.21)return .66;
+  if(pbr>=.04)return .75+((.20-pbr)/.16*.20); return .975;
+}
+function calcTheory(bps,fEps,roa,eq,pbr){
+  const av = bps * eqRate(eq);
+  const bv = fEps>0&&roa>0 ? 15*fEps*Math.min(roa,.3)*10*lev(eq) : 0;
+  const raw = av+bv;
+  const t = Math.max(0, raw*(1-riskRate(pbr)));
+  return {theory:Math.round(t), upper:Math.round(av+bv*2), asset:Math.round(av), business:Math.round(bv)};
+}
+function calcAlpha(t,p){ return p>0 ? Math.round((t-p)/p*1000)/10 : null }
+function levelOf(a){
+  if(a===null)return "不明";
+  if(a>100)return "超割安"; if(a>50)return "割安"; if(a>10)return "準割安";
+  if(a>-10)return "適正"; if(a>-30)return "準割高"; if(a>-50)return "割高";
+  return "超割高";
+}
+const LCOLOR={超割安:"#10b981",割安:"#34d399",準割安:"#6ee7b7",
+  適正:"#94a3b8",準割高:"#fbbf24",割高:"#f97316",超割高:"#ef4444",不明:"#6b7280"};
+function safe(v,d=0){ const n=parseFloat(v); return isNaN(n)?d:n }
+
+// ============================================================
+// APIコール
+// ============================================================
+let idToken="", refreshToken="";
+
+async function doConnect(token){
+  const r = await fetch(`${PROXY}/proxy/connect`,{
+    method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({token})
+  });
+  const d = await r.json();
+  if(!r.ok) throw new Error(d.error||"接続失敗");
+  refreshToken = token;
+  return d;
+}
+
+async function apiGet(path, params={}){
+  const q = new URLSearchParams({path,...params});
+  const r = await fetch(`${PROXY}/proxy/api?${q}`);
+  const d = await r.json();
+  if(!r.ok) throw new Error(d.error||"APIエラー");
+  return d;
+}
+
+// ============================================================
+// 銘柄情報キャッシュ
+// ============================================================
+let listedCache=null, priceCache={}, finsCache={};
+
+function latestDate(){
+  let d = new Date(); d.setDate(d.getDate()-90);
+  while(d.getDay()===0||d.getDay()===6) d.setDate(d.getDate()-1);
+  return d.toISOString().slice(0,10);
+}
+
+// ============================================================
+// 接続 UI
+// ============================================================
+document.getElementById("connect-btn").addEventListener("click", async()=>{
+  const token = document.getElementById("token-input").value.trim();
+  const btn = document.getElementById("connect-btn");
+  const err = document.getElementById("connect-err");
+  if(!token){err.textContent="トークンを入力してください";return}
+  btn.disabled=true; btn.textContent="接続中…"; err.textContent="";
+  try{
+    await doConnect(token);
+    document.getElementById("connect-screen").classList.add("hidden");
+    document.getElementById("main-screen").classList.remove("hidden");
+    loadMarketFilters();
+  }catch(e){
+    err.textContent = e.message.includes("fetch")?
+      "プロキシに接続できません。proxy.py を起動してください。":e.message;
+    btn.disabled=false; btn.textContent="接続する";
+  }
+});
+document.getElementById("token-input").addEventListener("keydown",e=>{
+  if(e.key==="Enter") document.getElementById("connect-btn").click();
+});
+document.getElementById("disconnect-btn").addEventListener("click",async()=>{
+  if(!confirm("切断しますか？")) return;
+  await fetch(`${PROXY}/proxy/disconnect`,{method:"POST"}).catch(()=>{});
+  location.reload();
+});
+
+// ============================================================
+// 市場・業種フィルタ読み込み
+// ============================================================
+async function loadMarketFilters(){
+  try{
+    if(!listedCache){
+      const d = await apiGet("/v2/listed/info");
+      listedCache = d.info||[];
+    }
+    const ms=[...new Set(listedCache.map(s=>s.MarketCodeName).filter(Boolean))].sort();
+    const ss=[...new Set(listedCache.map(s=>s.Sector33CodeName).filter(Boolean))].sort();
+    const mSel=document.getElementById("f-market");
+    const sSel=document.getElementById("f-sector");
+    ms.forEach(m=>mSel.appendChild(Object.assign(document.createElement("option"),{value:m,textContent:m})));
+    ss.forEach(s=>sSel.appendChild(Object.assign(document.createElement("option"),{value:s,textContent:s})));
+  }catch(e){ console.error(e); }
+}
+
+// ============================================================
+// スクリーニング
+// ============================================================
+document.getElementById("screen-btn").addEventListener("click", runScreen);
+
+async function runScreen(){
+  const btn=document.getElementById("screen-btn");
+  const loading=document.getElementById("loading");
+  const placeholder=document.getElementById("placeholder");
+  const table=document.getElementById("results-table");
+  const meta=document.getElementById("results-meta");
+
+  btn.disabled=true; btn.textContent="取得中…";
+  loading.classList.remove("hidden");
+  table.classList.add("hidden");
+  placeholder.classList.add("hidden");
+  meta.classList.add("hidden");
+
+  const minA   = parseFloat(document.getElementById("f-mina").value)||0;
+  const maxA   = parseFloat(document.getElementById("f-maxa").value)||500;
+  const minEq  = parseFloat(document.getElementById("f-eq").value)||0;
+  const minRoa = parseFloat(document.getElementById("f-roa").value)||0;
+  const market = document.getElementById("f-market").value;
+  const sector = document.getElementById("f-sector").value;
+  const sortBy = document.getElementById("f-sort").value;
+  const noTrap = document.getElementById("f-notrap").checked;
+
+  try{
+    // 1. 銘柄一覧
+    if(!listedCache){
+      document.getElementById("loading-text").textContent="銘柄一覧取得中…";
+      const d = await apiGet("/v2/listed/info");
+      listedCache = d.info||[];
+    }
+
+    let stocks = listedCache;
+    if(market) stocks = stocks.filter(s=>s.MarketCodeName===market);
+    if(sector) stocks = stocks.filter(s=>s.Sector33CodeName===sector);
+
+    // 2. 株価
+    const date = latestDate();
+    if(!priceCache[date]){
+      document.getElementById("loading-text").textContent="株価データ取得中…";
+      const d = await apiGet("/v2/prices/daily_quotes",{date});
+      priceCache[date]={};
+      (d.daily_quotes||[]).forEach(q=>{ if(q.Close) priceCache[date][q.Code]=q; });
+    }
+    const prices = priceCache[date];
+    let codes = stocks.map(s=>s.Code).filter(c=>prices[c]);
+
+    // 3. 財務データ（未キャッシュ分を並列取得）
+    const missing = codes.filter(c=>!(c in finsCache));
+    document.getElementById("loading-text").textContent=
+      `財務データ取得中… (${missing.length}件)`;
+
+    // バッチ並列（20並列）
+    for(let i=0;i<missing.length;i+=20){
+      const batch = missing.slice(i,i+20);
+      await Promise.all(batch.map(async code=>{
+        try{
+          const d = await apiGet("/v2/fins/statements",{code});
+          const stmts = d.statements||[];
+          finsCache[code] = stmts.length ? stmts[stmts.length-1] : null;
+        }catch{ finsCache[code]=null; }
+      }));
+      document.getElementById("loading-text").textContent=
+        `財務データ取得中… ${Math.min(i+20,missing.length)}/${missing.length}`;
+    }
+
+    // 4. 計算＋フィルタ
+    const infoMap={};
+    listedCache.forEach(s=>infoMap[s.Code]=s);
+    const results=[];
+
+    for(const code of codes){
+      const stmt = finsCache[code];
+      if(!stmt) continue;
+      const pq = prices[code];
+      const price = safe(pq.Close);
+      if(price<=0) continue;
+
+      const bps    = safe(stmt.BookValuePerShare);
+      const ta     = safe(stmt.TotalAssets);
+      const equity = safe(stmt.Equity);
+      const fOp    = safe(stmt.ForecastOrdinaryProfit);
+      const op     = safe(stmt.OrdinaryProfit);
+      const shares = safe(stmt.NumberOfIssuedAndOutstandingSharesAtTheEndOfFiscalYearIncludingTreasuryStock);
+
+      if(bps<=0||ta<=0||shares<=0) continue;
+      const eq   = equity/ta;
+      const fEps = fOp>0 ? fOp*.7/shares : 0;
+      const roa  = op>0  ? op/ta : 0;
+      const pbr  = bps>0 ? price/bps : 1;
+
+      const t = calcTheory(bps,fEps,roa,eq,pbr);
+      const a = calcAlpha(t.theory,price);
+      if(a===null) continue;
+      if(a<minA||a>maxA) continue;
+      if(eq*100<minEq) continue;
+      if(roa*100<minRoa) continue;
+      const vt = pbr<0.3&&a>100;
+      if(noTrap&&vt) continue;
+
+      const si = infoMap[code]||{};
+      const lv = levelOf(a);
+      results.push({
+        code, name:si.CompanyName||"", market:si.MarketCodeName||"",
+        sector:si.Sector33CodeName||"", price,
+        ...t, alpha:a, level:lv, lcolor:LCOLOR[lv]||"#6b7280",
+        bps:Math.round(bps), fEps:Math.round(fEps*10)/10,
+        roa:Math.round(roa*1000)/10, eq:Math.round(eq*1000)/10,
+        pbr:Math.round(pbr*100)/100, vt
+      });
+    }
+
+    const KEY={alpha:"alpha",roa:"roa",eq:"eq"};
+    results.sort((a,b)=>b[KEY[sortBy]||"alpha"]-a[KEY[sortBy]||"alpha"]);
+
+    loading.classList.add("hidden");
+    meta.classList.remove("hidden");
+    meta.innerHTML=`<strong>${results.length}銘柄</strong> が条件に一致
+      ／ データ基準日: ${date}
+      <span style="color:var(--amber);font-size:11px;margin-left:6px">※ 無料プラン: 約12週遅延</span>`;
+    renderTable(results.slice(0,300));
+    table.classList.remove("hidden");
+
+  }catch(e){
+    loading.classList.add("hidden");
+    placeholder.classList.remove("hidden");
+    placeholder.textContent="エラー: "+e.message;
+  }finally{
+    btn.disabled=false; btn.textContent="スクリーニング実行";
+  }
+}
+
+// ============================================================
+// テーブル描画
+// ============================================================
+function renderTable(rows){
+  const tbody=document.getElementById("results-tbody");
+  tbody.innerHTML="";
+  rows.forEach(r=>{
+    const tr=document.createElement("tr");
+    if(r.code===activeCode) tr.classList.add("active");
+    const aSign=r.alpha>=0?"+":"";
+    tr.innerHTML=`
+      <td>${r.code}</td>
+      <td title="${r.name}">${r.name}</td>
+      <td class="num">${r.price.toLocaleString()}</td>
+      <td class="num" style="color:var(--gold)">${r.theory.toLocaleString()}</td>
+      <td class="num ${r.alpha>=0?"pos":"neg"}">${aSign}${r.alpha}%</td>
+      <td><span class="lbadge" style="background:${r.lcolor}">${r.level}</span></td>
+      <td class="num muted">${r.upper.toLocaleString()}</td>
+      <td class="num">${r.asset.toLocaleString()}</td>
+      <td class="num">${r.business.toLocaleString()}</td>
+      <td class="num">${r.bps.toLocaleString()}</td>
+      <td class="num">${r.fEps}</td>
+      <td class="num ${r.roa>=5?"pos":""}">${r.roa}%</td>
+      <td class="num ${r.eq>=50?"pos":r.eq<30?"neg":""}">${r.eq}%</td>
+      <td class="num">${r.pbr}</td>
+      <td style="color:var(--muted);font-size:11px">${(r.sector||"").replace("業","")}</td>
+    `;
+    tr.addEventListener("click",()=>{
+      document.querySelectorAll("#results-tbody tr").forEach(t=>t.classList.remove("active"));
+      tr.classList.add("active");
+      loadDetail(r.code);
+    });
+    tbody.appendChild(tr);
+  });
+}
+
+// ============================================================
+// 詳細パネル
+// ============================================================
+let activeCode=null, chart=null;
+
+async function loadDetail(code){
+  activeCode=code;
+  document.getElementById("d-empty").classList.add("hidden");
+  const dc=document.getElementById("d-content");
+  dc.classList.remove("hidden");
+  dc.innerHTML='<div class="loading-wrap" style="padding:40px"><div class="spinner"></div></div>';
+  if(chart){chart.destroy();chart=null;}
+
+  try{
+    const [stmtData, priceData] = await Promise.all([
+      apiGet("/v2/fins/statements",{code}),
+      apiGet("/v2/prices/daily_quotes",{code})
+    ]);
+    const stmts  = stmtData.statements||[];
+    const quotes = priceData.daily_quotes||[];
+    const info   = (listedCache||[]).find(s=>s.Code===code)||{};
+
+    // 財務履歴
+    const hist=[];
+    stmts.slice(-8).forEach(s=>{
+      const bps=safe(s.BookValuePerShare), ta=safe(s.TotalAssets),
+            equity=safe(s.Equity), fOp=safe(s.ForecastOrdinaryProfit),
+            op=safe(s.OrdinaryProfit), ns=safe(s.NetSales),
+            shares=safe(s.NumberOfIssuedAndOutstandingSharesAtTheEndOfFiscalYearIncludingTreasuryStock);
+      if(ta<=0||bps<=0) return;
+      const eq=equity/ta, fEps=fOp>0&&shares>0?fOp*.7/shares:0, roa=op>0?op/ta:0;
+      const t=calcTheory(bps,fEps,roa,eq,1);
+      hist.push({period:(s.CurrentFiscalYearEndDate||"").slice(0,7),
+        theory:t.theory, bps:Math.round(bps),
+        fEps:Math.round(fEps*10)/10, roa:Math.round(roa*1000)/10,
+        eq:Math.round(eq*1000)/10,
+        sales:Math.round(ns/1e8*10)/10, opProfit:Math.round(op/1e8*10)/10});
+    });
+
+    // 現在値
+    const ls=stmts.length?stmts[stmts.length-1]:{};
+    const lq=quotes.length?quotes[quotes.length-1]:{};
+    const bps=safe(ls.BookValuePerShare), ta=safe(ls.TotalAssets),
+          equity=safe(ls.Equity), fOp=safe(ls.ForecastOrdinaryProfit),
+          op=safe(ls.OrdinaryProfit),
+          shares=safe(ls.NumberOfIssuedAndOutstandingSharesAtTheEndOfFiscalYearIncludingTreasuryStock);
+    const price=safe(lq.Close);
+    const div=safe(ls.AnnualDividendPerShare||ls.YearEndDividendPerShare);
+    const eq=ta>0?equity/ta:0;
+    const fEps=fOp>0&&shares>0?fOp*.7/shares:0;
+    const roa=op>0?op/ta:0;
+    const pbr=bps>0&&price>0?price/bps:1;
+    const t=calcTheory(bps,fEps,roa,eq,pbr);
+    const a=calcAlpha(t.theory,price);
+    const lv=levelOf(a);
+    const div4=div>0?Math.round(div*25):0;
+
+    // 株価履歴
+    const priceHist=quotes.slice(-120).filter(q=>q.Close)
+      .map(q=>({date:q.Date.slice(5),close:q.Close}));
+
+    renderDetail({info,price,t,a,lv,lcolor:LCOLOR[lv],bps,fEps,roa,eq,pbr,div,div4,
+      divYield:div>0&&price>0?Math.round(div/price*10000)/100:0, hist, priceHist,
+      code, name:info.CompanyName||""});
+
+  }catch(e){
+    dc.innerHTML=`<div class="empty-detail">エラー: ${e.message}</div>`;
+  }
+}
+
+function renderDetail(d){
+  const dc=document.getElementById("d-content");
+  const aSign=d.a>=0?"+":"";
+  const aColor=d.a>=0?"var(--green)":"var(--red)";
+  const maxBar=Math.max(d.price,d.t.theory,d.t.upper,1);
+  const pct=v=>Math.round(v/maxBar*100);
+  const eq100=Math.round(d.eq*100);
+  const roa100=Math.round(d.roa*1000)/10;
+  const bpsF=Math.round(d.bps);
+  const fEpsF=Math.round(d.fEps*10)/10;
+
+  dc.innerHTML=`
+    <div class="detail-header">
+      <div>
+        <div class="d-code">${d.code}</div>
+        <div class="d-name">${d.name}</div>
+        <div class="d-sub">${d.info.MarketCodeName||""} ／ ${d.info.Sector33CodeName||""}</div>
+      </div>
+      <button class="close-btn" id="close-detail">✕</button>
+    </div>
+    <div class="metric-grid">
+      <div class="mc hl">
+        <div class="ml">株価（基準日）</div>
+        <div class="mv">¥${d.price.toLocaleString()}</div>
+        <div class="ms">PBR: ${d.pbr}倍</div>
+      </div>
+      <div class="mc hl">
+        <div class="ml">α値（割安度）</div>
+        <div class="mv" style="color:${aColor}">${aSign}${d.a}%</div>
+        <div class="ms"><span class="lbadge" style="background:${d.lcolor}">${d.lv}</span></div>
+      </div>
+      <div class="mc">
+        <div class="ml">理論株価</div>
+        <div class="mv" style="color:var(--gold)">¥${d.t.theory.toLocaleString()}</div>
+        <div class="ms">資産:¥${d.t.asset.toLocaleString()} ＋ 事業:¥${d.t.business.toLocaleString()}</div>
+      </div>
+      <div class="mc">
+        <div class="ml">上限株価</div>
+        <div class="mv" style="color:var(--amber)">¥${d.t.upper.toLocaleString()}</div>
+        <div class="ms">割高ライン目安</div>
+      </div>
+      <div class="mc">
+        <div class="ml">ROA</div>
+        <div class="mv ${roa100>=5?"pos":roa100<2?"neg":""}">${roa100}%</div>
+        <div class="ms">事業効率性</div>
+      </div>
+      <div class="mc">
+        <div class="ml">自己資本比率</div>
+        <div class="mv ${eq100>=50?"pos":eq100<30?"neg":""}">${eq100}%</div>
+        <div class="ms">財務健全性</div>
+      </div>
+      <div class="mc">
+        <div class="ml">BPS（1株純資産）</div>
+        <div class="mv">¥${bpsF.toLocaleString()}</div>
+        <div class="ms">解散価値の基準</div>
+      </div>
+      <div class="mc">
+        <div class="ml">予想EPS（はっしゃん式）</div>
+        <div class="mv">¥${fEpsF}</div>
+        <div class="ms">予想経常利益×0.7÷株式数</div>
+      </div>
+      ${d.div>0?`
+      <div class="mc">
+        <div class="ml">配当（年間）</div>
+        <div class="mv" style="color:var(--accent)">¥${d.div}</div>
+        <div class="ms">利回り: ${d.divYield}%</div>
+      </div>
+      <div class="mc">
+        <div class="ml">配当4%ライン</div>
+        <div class="mv">¥${d.div4.toLocaleString()}</div>
+        <div class="ms">長期保有の目安価格</div>
+      </div>`:""}
+    </div>
+    <div class="bar-wrap">
+      <h4>株価水準イメージ</h4>
+      <div class="bar-row">
+        <span class="bar-lbl" style="color:var(--muted)">株価</span>
+        <div class="bar-bg"><div class="bar-fill" style="width:${pct(d.price)}%;background:var(--accent)"></div></div>
+        <span class="bar-val" style="color:var(--accent)">¥${d.price.toLocaleString()}</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-lbl" style="color:var(--gold)">理論株価</span>
+        <div class="bar-bg"><div class="bar-fill" style="width:${pct(d.t.theory)}%;background:var(--gold)"></div></div>
+        <span class="bar-val" style="color:var(--gold)">¥${d.t.theory.toLocaleString()}</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-lbl" style="color:var(--amber)">上限株価</span>
+        <div class="bar-bg"><div class="bar-fill" style="width:${pct(d.t.upper)}%;background:var(--amber)"></div></div>
+        <span class="bar-val" style="color:var(--amber)">¥${d.t.upper.toLocaleString()}</span>
+      </div>
+      ${d.div4>0?`<div class="bar-row">
+        <span class="bar-lbl" style="color:var(--accent)">配当4%</span>
+        <div class="bar-bg"><div class="bar-fill" style="width:${pct(d.div4)}%;background:var(--accent)"></div></div>
+        <span class="bar-val" style="color:var(--accent)">¥${d.div4.toLocaleString()}</span>
+      </div>`:""}
+    </div>
+    <div class="chart-wrap">
+      <h4>株価推移（直近）</h4>
+      <canvas id="price-chart" height="140"></canvas>
+    </div>
+    ${d.hist.length?`
+    <div class="hist-wrap">
+      <h4>財務履歴（決算期別）</h4>
+      <table class="hist-tbl">
+        <thead><tr>
+          <th>決算期</th><th>理論株価</th><th>BPS</th><th>予想EPS</th>
+          <th>ROA%</th><th>自己資本比率%</th><th>売上(億)</th><th>経常利益(億)</th>
+        </tr></thead>
+        <tbody>
+          ${d.hist.map(h=>`<tr>
+            <td>${h.period}</td>
+            <td style="color:var(--gold)">¥${h.theory.toLocaleString()}</td>
+            <td>¥${h.bps.toLocaleString()}</td>
+            <td>¥${h.fEps}</td>
+            <td class="${h.roa>=5?"pos":""}">${h.roa}%</td>
+            <td class="${h.eq>=50?"pos":h.eq<30?"neg":""}">${h.eq}%</td>
+            <td>${h.sales}</td>
+            <td class="${h.opProfit>0?"pos":"neg"}">${h.opProfit}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>`:""}
+    <div style="height:24px"></div>
+  `;
+
+  document.getElementById("close-detail").addEventListener("click",()=>{
+    document.getElementById("d-empty").classList.remove("hidden");
+    dc.classList.add("hidden");
+    document.querySelectorAll("#results-tbody tr").forEach(t=>t.classList.remove("active"));
+    activeCode=null;
+    if(chart){chart.destroy();chart=null;}
+  });
+
+  if(d.priceHist.length){
+    const ctx=document.getElementById("price-chart").getContext("2d");
+    chart=new Chart(ctx,{
+      type:"line",
+      data:{
+        labels:d.priceHist.map(p=>p.date),
+        datasets:[{
+          label:"株価", data:d.priceHist.map(p=>p.close),
+          borderColor:"#3b82f6", backgroundColor:"rgba(59,130,246,.08)",
+          borderWidth:1.5, pointRadius:0, fill:true, tension:.3
+        }]
+      },
+      options:{
+        responsive:true, animation:false,
+        plugins:{legend:{display:false},
+          tooltip:{callbacks:{label:c=>"¥"+c.raw.toLocaleString()}}},
+        scales:{
+          x:{ticks:{color:"#64748b",font:{size:10},maxTicksLimit:8},grid:{color:"#1e2535"}},
+          y:{ticks:{color:"#64748b",font:{size:10},callback:v=>"¥"+v.toLocaleString()},grid:{color:"#1e2535"}}
+        }
+      }
+    });
+  }
+}
+</script>
+</body>
+</html>
