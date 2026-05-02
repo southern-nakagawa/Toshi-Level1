@@ -278,18 +278,21 @@ async function loadFilters(){
     console.log("[MASTER] サンプル1件:", JSON.stringify(sample));
 
     // 市場フィールド候補
-    const mktField = ["MarketCodeName","MarketCode","Mkt","Market","Section","市場"].find(k=>sample[k]!==undefined);
+    const mktField = ["MktNm","MarketCode","Mkt","Market","Section","市場"].find(k=>sample[k]!==undefined);
     // 業種フィールド候補
-    const secField = ["Sector33CodeName","Sector33Code","Sec33","Sector","業種"].find(k=>sample[k]!==undefined);
+    const secField = ["S33Nm","Sector33Code","Sec33","Sector","業種"].find(k=>sample[k]!==undefined);
     // 銘柄名フィールド候補（後で詳細表示に使用）
-    const nameField = ["CompanyName","Name","CoName","銘柄名"].find(k=>sample[k]!==undefined);
+    const nameField = ["CoName","Name","CoName","銘柄名"].find(k=>sample[k]!==undefined);
 
     console.log(`[MASTER] 市場フィールド: ${mktField}, 業種フィールド: ${secField}, 銘柄名: ${nameField}`);
 
     if(!mktField && !secField) throw new Error(`フィールド名不明。キー: ${Object.keys(sample).join(", ")}`);
 
     const ms = mktField ? [...new Set(masterCache.map(s=>s[mktField]).filter(Boolean))].sort() : [];
-    const ss = secField ? [...new Set(masterCache.map(s=>s[secField]).filter(Boolean))].sort() : [];
+    // 業種はS33コード順（数値順）にソート
+    const secMap={};
+    masterCache.forEach(s=>{if(s.S33&&s.S33Nm)secMap[s.S33]=s.S33Nm;});
+    const ss=Object.keys(secMap).sort((a,b)=>parseInt(a)-parseInt(b)).map(k=>secMap[k]);
 
     // スクリーニング用にフィールド名を記録
     window._masterFields = {mkt: mktField, sec: secField, name: nameField, code: "Code"};
@@ -344,8 +347,8 @@ async function runScreen(){
       masterCache=d.data||[];}
 
     let stocks=masterCache;
-    if(market)stocks=stocks.filter(s=>s.MarketCodeName===market);
-    if(sector)stocks=stocks.filter(s=>s.Sector33CodeName===sector);
+    if(market)stocks=stocks.filter(s=>s.MktNm===market);
+    if(sector)stocks=stocks.filter(s=>s.S33Nm===sector);
 
     // 2. 株価（日付指定一括）
     const date=latestDate();
@@ -383,23 +386,30 @@ async function runScreen(){
     const results=[];
 
     for(const code of codes){
-      const stmt=finsCache[code];if(!stmt)continue;
+      // キャッシュ取得（旧形式=オブジェクト、新形式=配列 両対応）
+      let rawStmts=finsCache[code];
+      if(!rawStmts)continue;
+      if(!Array.isArray(rawStmts)) rawStmts=[rawStmts]; // 旧形式を配列に統一
+      if(!rawStmts.length)continue;
+      // BPSがある最新FYレコードを優先
+      const fyRecs=rawStmts.filter(s=>s.CurPerType==="FY"&&parseFloat(s.BPS||0)>0);
+      const stmt=fyRecs.length?fyRecs[fyRecs.length-1]:rawStmts[rawStmts.length-1];
+      if(!stmt)continue;
       const pq=prices[code];
       // V2カラム: C=終値 or Close(後方互換)
       const price=safe(pq.C||pq.Close);
       if(price<=0)continue;
 
       // V2 fins/summary フィールド
-      const bps=safe(stmt.BookValuePerShare);
-      const ta=safe(stmt.TotalAssets);
-      const equity=safe(stmt.Equity||stmt.NetAssets);
-      const fOp=safe(stmt.ForecastOrdinaryProfit||stmt.ForecastNetIncome);
-      const op=safe(stmt.OrdinaryProfit||stmt.OperatingProfit);
-      const shares=safe(stmt.NumberOfIssuedAndOutstandingSharesAtTheEndOfFiscalYearIncludingTreasuryStock
-                     ||stmt.IssuedShareTotal);
-
+      // V2フィールド名
+      const bps=safe(stmt.BPS);
+      const ta=safe(stmt.TA);
+      const eq=safe(stmt.EqAR); // 既に比率（例: 0.367）
+      const fOp=safe(stmt.FOdP||stmt.FOP); // 予想経常利益
+      const op=safe(stmt.OdP||stmt.OP);   // 経常利益
+      const shares=safe(stmt.ShOutFY);
+      // FY決算でなければBPS空→スキップ
       if(bps<=0||ta<=0||shares<=0)continue;
-      const eq=equity>0?equity/ta:0;
       const fEps=fOp>0?fOp*.7/shares:0;
       const roa=op>0?op/ta:0;
       const pbr=bps>0?price/bps:1;
@@ -408,17 +418,17 @@ async function runScreen(){
       const a=calcAlpha(t.theory,price);
       if(a===null)continue;
       if(a<minA||a>maxA)continue;
-      if(eq*100<minEq)continue;
+      if(eq*100<minEq)continue; // eq=EqAR is already 0-1 ratio
       if(roa*100<minRoa)continue;
       const vt=pbr<0.3&&a>100;
       if(noTrap&&vt)continue;
 
       const si=infoMap[code]||{};
       const lv=levelOf(a);
-      results.push({code,name:si.CompanyName||"",market:si.MarketCodeName||"",
-        sector:si.Sector33CodeName||"",price,...t,alpha:a,level:lv,lcolor:LCOLOR[lv]||"#6b7280",
+      results.push({code,name:si.CoName||"",market:si.MktNm||"",
+        sector:si.S33Nm||"",price,...t,alpha:a,level:lv,lcolor:LCOLOR[lv]||"#6b7280",
         bps:Math.round(bps),fEps:Math.round(fEps*10)/10,
-        roa:Math.round(roa*1000)/10,eq:Math.round(eq*1000)/10,
+        roa:Math.round(roa*100*10)/10,eq:Math.round(eq*100*10)/10,
         pbr:Math.round(pbr*100)/100,vt});}
 
     const KEY={alpha:"alpha",roa:"roa",eq:"eq"};
@@ -478,34 +488,40 @@ async function loadDetail(code){
     const [fr,pr]=await Promise.all([
       fetch(`${PROXY}/proxy/fins?code=${code}`).then(r=>r.json()),
       fetch(`${PROXY}/proxy/prices?code=${code}`).then(r=>r.json())]);
-    const stmts=fr.data||[];
+    // 旧形式（オブジェクト）・新形式（配列）両対応
+    let stmts=fr.data||[];
+    if(!Array.isArray(stmts)) stmts=[stmts];
     const quotes=pr.data||[];
     const info=(masterCache||[]).find(s=>s.Code===code)||{};
 
     // 財務履歴
     const hist=[];
     stmts.slice(-8).forEach(s=>{
-      const bps=safe(s.BookValuePerShare),ta=safe(s.TotalAssets),
-            equity=safe(s.Equity||s.NetAssets),fOp=safe(s.ForecastOrdinaryProfit||s.ForecastNetIncome),
-            op=safe(s.OrdinaryProfit||s.OperatingProfit),ns=safe(s.NetSales||s.Sales),
-            shares=safe(s.NumberOfIssuedAndOutstandingSharesAtTheEndOfFiscalYearIncludingTreasuryStock||s.IssuedShareTotal);
-      if(ta<=0||bps<=0)return;
-      const eq=equity>0?equity/ta:0,fEps=fOp>0&&shares>0?fOp*.7/shares:0,roa=op>0?op/ta:0;
+      const bps=safe(s.BPS),ta=safe(s.TA),
+            eq=safe(s.EqAR),
+            fOp=safe(s.FOdP||s.FOP),
+            op=safe(s.OdP||s.OP),ns=safe(s.Sales),
+            shares=safe(s.ShOutFY);
+      if(ta<=0||bps<=0||shares<=0)return;
+      const fEps=fOp>0?fOp*.7/shares:0,roa=op>0?op/ta:0;
       const t=calcTheory(bps,fEps,roa,eq,1);
-      hist.push({period:(s.DisclosedDate||s.CurrentFiscalYearEndDate||"").slice(0,7),
+      hist.push({period:(s.CurFYEn||s.DiscDate||"").slice(0,7),
         theory:t.theory,bps:Math.round(bps),fEps:Math.round(fEps*10)/10,
-        roa:Math.round(roa*1000)/10,eq:Math.round(eq*1000)/10,
+        roa:Math.round(roa*100*10)/10,eq:Math.round(eq*100*10)/10,
         sales:Math.round(ns/1e8*10)/10,opProfit:Math.round(op/1e8*10)/10});});
 
-    const ls=stmts.length?stmts[stmts.length-1]:{};
+    // BPSがある最新FYレコードを優先
+    const fyStmts=stmts.filter(s=>s.CurPerType==="FY"&&s.BPS);
+    const ls=fyStmts.length?fyStmts[fyStmts.length-1]:(stmts.length?stmts[stmts.length-1]:{});
     const lq=quotes.length?quotes[quotes.length-1]:{};
-    const bps=safe(ls.BookValuePerShare),ta=safe(ls.TotalAssets),
-          equity=safe(ls.Equity||ls.NetAssets),fOp=safe(ls.ForecastOrdinaryProfit||ls.ForecastNetIncome),
-          op=safe(ls.OrdinaryProfit||ls.OperatingProfit),
-          shares=safe(ls.NumberOfIssuedAndOutstandingSharesAtTheEndOfFiscalYearIncludingTreasuryStock||ls.IssuedShareTotal);
+    const bps=safe(ls.BPS),ta=safe(ls.TA),
+          eq=safe(ls.EqAR),
+          fOp=safe(ls.FOdP||ls.FOP),
+          op=safe(ls.OdP||ls.OP),
+          shares=safe(ls.ShOutFY);
     const price=safe(lq.C||lq.Close);
-    const div=safe(ls.AnnualDividendPerShare||ls.YearEndDividendPerShare||ls.DividendPerShare);
-    const eq=ta>0?equity/ta:0,fEps=fOp>0&&shares>0?fOp*.7/shares:0,roa=op>0?op/ta:0;
+    const div=safe(ls.DivAnn||ls.NxFDivAnn);
+    const fEps=fOp>0&&shares>0?fOp*.7/shares:0,roa=op>0?op/ta:0;
     const pbr=bps>0&&price>0?price/bps:1;
     const t=calcTheory(bps,fEps,roa,eq,pbr);
     const a=calcAlpha(t.theory,price),lv=levelOf(a);
@@ -526,8 +542,8 @@ function renderDetail(d){
   dc.innerHTML=`
     <div class="detail-header">
       <div><div class="d-code">${d.code}</div>
-        <div class="d-name">${d.info.CompanyName||""}</div>
-        <div class="d-sub">${d.info.MarketCodeName||""} ／ ${d.info.Sector33CodeName||""}</div></div>
+        <div class="d-name">${d.info.CoName||""}</div>
+        <div class="d-sub">${d.info.MktNm||""} ／ ${d.info.S33Nm||""}</div></div>
       <button class="close-btn" id="close-detail">✕</button>
     </div>
     <div class="metric-grid">

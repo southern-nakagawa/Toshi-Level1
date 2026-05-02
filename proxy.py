@@ -31,7 +31,13 @@ def save_json(path, data):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False)
 
-fins_cache   = load_json(FINS_CACHE_FILE)  or {}
+_raw_fins    = load_json(FINS_CACHE_FILE) or {}
+# 旧形式（dict単体）→ 新形式（list）に自動変換
+fins_cache = {}
+for k, v in _raw_fins.items():
+    fins_cache[k] = v if isinstance(v, list) else ([v] if isinstance(v, dict) else [])
+valid_on_load = sum(1 for v in fins_cache.values() if v)
+print(f"[CACHE] キャッシュ変換: {valid_on_load}銘柄")
 master_cache = load_json(MASTER_CACHE_FILE)
 price_cache  = load_json(PRICE_CACHE_FILE) or {}
 
