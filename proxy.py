@@ -1,81 +1,229 @@
 #!/usr/bin/env python3
 """
-J-Quants CORS プロキシ
-ローカルで起動してブラウザからのAPIリクエストを中継します。
-APIキーはメモリのみ保持・ファイル保存なし。
+J-Quants V2 API CORS プロキシ
+- APIキーはメモリのみ（ファイル保存なし）
+- 財務データ・銘柄一覧はキャッシュファイルに自動保存
+- Free プラン: 5リクエスト/分 → 自動スロットリング
 """
-import os, json, requests
+import os, json, time, atexit
+import requests
 from flask import Flask, request, jsonify, Response
 
 app = Flask(__name__)
 BASE = "https://api.jquants.com"
-mem = {"id_token": None, "refresh_token": None}
+mem  = {"api_key": None, "last_req": 0}
+
+RATE_INTERVAL = 14.0
+
+CACHE_DIR         = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache")
+FINS_CACHE_FILE   = os.path.join(CACHE_DIR, "fins_cache.json")
+MASTER_CACHE_FILE = os.path.join(CACHE_DIR, "master_cache.json")
+PRICE_CACHE_FILE  = os.path.join(CACHE_DIR, "price_cache.json")
+
+os.makedirs(CACHE_DIR, exist_ok=True)
+
+def load_json(path):
+    try:
+        with open(path, "r", encoding="utf-8") as f: return json.load(f)
+    except: return None
+
+def save_json(path, data):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False)
+
+fins_cache   = load_json(FINS_CACHE_FILE)  or {}
+master_cache = load_json(MASTER_CACHE_FILE)
+price_cache  = load_json(PRICE_CACHE_FILE) or {}
 
 def cors(resp):
-    resp.headers["Access-Control-Allow-Origin"] = "*"
-    resp.headers["Access-Control-Allow-Headers"] = "Content-Type,Authorization"
+    resp.headers["Access-Control-Allow-Origin"]  = "*"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
     resp.headers["Access-Control-Allow-Methods"] = "GET,POST,OPTIONS"
     return resp
 
 @app.after_request
-def add_cors(resp):
-    return cors(resp)
+def add_cors(r): return cors(r)
 
+def throttle():
+    wait = RATE_INTERVAL - (time.time() - mem["last_req"])
+    if wait > 0:
+        print(f"[RATE] {wait:.1f}秒待機...")
+        time.sleep(wait)
+    mem["last_req"] = time.time()
+
+def jget(path, params=None):
+    throttle()
+    r = requests.get(f"{BASE}{path}",
+                     headers={"x-api-key": mem["api_key"]},
+                     params=params or {}, timeout=30)
+    print(f"[API] GET {path} → {r.status_code}")
+    r.raise_for_status()
+    return r.json()
+
+# ── 接続 ──
 @app.route("/proxy/connect", methods=["POST", "OPTIONS"])
 def connect():
     if request.method == "OPTIONS": return cors(Response())
-    token = (request.json or {}).get("token", "").strip()
-    r = requests.get(f"{BASE}/v1/token/auth_refresh", params={"refreshtoken": token}, timeout=10)
-    if not r.ok:
-        return jsonify({"error": f"認証失敗 (HTTP {r.status_code})"}), 400
-    mem["id_token"] = r.json().get("idToken")
-    mem["refresh_token"] = token
-    return jsonify({"ok": True})
+    key = (request.json or {}).get("apiKey", "").strip()
+    if not key:
+        return jsonify({"error": "APIキーを入力してください"}), 400
+    # 接続テスト: 約90日前の平日（Freeプランのデータ遅延内に収まる日付）
+    from datetime import datetime, timedelta
+    test_date = datetime.now() - timedelta(days=90)
+    while test_date.weekday() >= 5:
+        test_date -= timedelta(days=1)
+    test_date_str = test_date.strftime("%Y%m%d")
+    try:
+        r = requests.get(f"{BASE}/v2/equities/bars/daily",
+                         headers={"x-api-key": key},
+                         params={"code": "86970", "date": test_date_str},
+                         timeout=10)
+        print(f"[CONNECT] /v2/equities/bars/daily?date={test_date_str} → {r.status_code}")
+        if not r.ok:
+            return jsonify({"error": f"APIキー認証失敗 ({r.status_code}): {r.text[:200]}"}), 400
+    except Exception as e:
+        return jsonify({"error": f"接続エラー: {str(e)}"}), 500
+
+    mem["api_key"]  = key
+    mem["last_req"] = 0
+    valid = sum(1 for v in fins_cache.values() if v)
+    return jsonify({"ok": True, "cached_fins": valid})
 
 @app.route("/proxy/disconnect", methods=["POST", "OPTIONS"])
 def disconnect():
     if request.method == "OPTIONS": return cors(Response())
-    mem["id_token"] = None
-    mem["refresh_token"] = None
+    mem["api_key"] = None
+    if fins_cache:
+        save_json(FINS_CACHE_FILE, fins_cache)
+        valid = sum(1 for v in fins_cache.values() if v)
+        print(f"[CACHE] 切断時保存: 有効{valid} / 総{len(fins_cache)}銘柄")
     return jsonify({"ok": True})
 
 @app.route("/proxy/status")
 def status():
-    return jsonify({"connected": bool(mem["id_token"])})
+    valid = sum(1 for v in fins_cache.values() if v)
+    return jsonify({"connected": bool(mem["api_key"]), "cached_fins": valid})
 
-def _refresh():
-    r = requests.get(f"{BASE}/v1/token/auth_refresh",
-                     params={"refreshtoken": mem["refresh_token"]}, timeout=10)
-    if r.ok:
-        mem["id_token"] = r.json().get("idToken")
+@app.route("/proxy/cache_info")
+def cache_info():
+    valid = sum(1 for v in fins_cache.values() if v)
+    return jsonify({"fins_valid": valid, "fins_total": len(fins_cache),
+                    "master": len(master_cache) if master_cache else 0,
+                    "prices": len(price_cache), "cache_dir": CACHE_DIR})
 
-def jget(path, params=None):
-    hdrs = {"Authorization": f"Bearer {mem['id_token']}"}
-    r = requests.get(f"{BASE}{path}", headers=hdrs, params=params or {}, timeout=60)
-    if r.status_code == 401:
-        _refresh()
-        hdrs["Authorization"] = f"Bearer {mem['id_token']}"
-        r = requests.get(f"{BASE}{path}", headers=hdrs, params=params or {}, timeout=60)
-    r.raise_for_status()
-    return r.json()
+@app.route("/proxy/cache_clear", methods=["POST", "OPTIONS"])
+def cache_clear():
+    if request.method == "OPTIONS": return cors(Response())
+    global fins_cache, master_cache, price_cache
+    fins_cache = {}; master_cache = None; price_cache = {}
+    for f in [FINS_CACHE_FILE, MASTER_CACHE_FILE, PRICE_CACHE_FILE]:
+        try: os.remove(f)
+        except: pass
+    return jsonify({"ok": True})
 
-@app.route("/proxy/api")
-def proxy_api():
-    if not mem["id_token"]:
-        return jsonify({"error": "未接続"}), 401
-    path   = request.args.get("path", "")
-    params = {k: v for k, v in request.args.items() if k != "path"}
+# ── 銘柄一覧（V2: /v2/listed/info, レスポンスキー: info）──
+@app.route("/proxy/master")
+def master():
+    global master_cache
+    if not mem["api_key"]: return jsonify({"error": "未接続"}), 401
     try:
-        return jsonify(jget(path, params))
+        if master_cache:
+            print(f"[CACHE] 銘柄一覧: キャッシュ返却 ({len(master_cache)}件)")
+            return jsonify({"data": master_cache, "from_cache": True})
+        # 公式仕様: GET /v2/equities/master, レスポンスキーは "data"
+        r = requests.get(f"{BASE}/v2/equities/master",
+                         headers={"x-api-key": mem["api_key"]}, timeout=30)
+        mem["last_req"] = time.time()
+        print(f"[MASTER] /v2/equities/master → {r.status_code}")
+        if not r.ok:
+            return jsonify({"error": f"銘柄一覧取得失敗 ({r.status_code}): {r.text[:300]}"}), 500
+        d = r.json()
+        print(f"[MASTER] レスポンスキー: {list(d.keys())}")
+        # キーを探す（data, info, items など）
+        data = []
+        for key in ["data", "info", "items", "equities", "master"]:
+            if key in d and d[key]:
+                data = d[key]
+                print(f"[MASTER] {len(data)}件取得 (key={key})")
+                break
+        if not data:
+            return jsonify({"error": f"銘柄データなし。レスポンス: {str(d)[:300]}"}), 500
+        master_cache = data
+        save_json(MASTER_CACHE_FILE, master_cache)
+        print(f"[MASTER] {len(master_cache)}件取得・保存")
+        return jsonify({"data": master_cache})
+    except Exception as e:
+        print(f"[MASTER] エラー: {e}")
+        return jsonify({"error": str(e)}), 500
+
+# ── 株価（V2: /v2/equities/bars/daily, レスポンスキー: data）──
+@app.route("/proxy/prices")
+def prices():
+    if not mem["api_key"]: return jsonify({"error": "未接続"}), 401
+    try:
+        date = request.args.get("date", "")
+        code = request.args.get("code", "")
+        if date and not code:
+            if date in price_cache:
+                print(f"[CACHE] 株価 {date}: キャッシュ返却")
+                return jsonify({"data": price_cache[date], "from_cache": True})
+            d = jget("/v2/equities/bars/daily", {"date": date})
+            price_cache[date] = d.get("data", [])
+            save_json(PRICE_CACHE_FILE, price_cache)
+            print(f"[PRICE] {date}: {len(price_cache[date])}件保存")
+            return jsonify({"data": price_cache[date]})
+        params = {}
+        if date: params["date"] = date
+        if code: params["code"] = code
+        d = jget("/v2/equities/bars/daily", params)
+        return jsonify({"data": d.get("data", [])})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# ── 財務サマリー（V2: /v2/fins/summary, レスポンスキー: data）──
+@app.route("/proxy/fins")
+def fins():
+    if not mem["api_key"]: return jsonify({"error": "未接続"}), 401
+    try:
+        code = request.args.get("code", "")
+        if code and code in fins_cache:
+            return jsonify({"data": fins_cache[code], "from_cache": True})
+        d    = jget("/v2/fins/summary", {"code": code} if code else {})
+        data = d.get("data", [])
+        if code:
+            fins_cache[code] = data
+            valid = sum(1 for v in fins_cache.values() if v)
+            if valid % 20 == 0 and valid > 0:
+                save_json(FINS_CACHE_FILE, fins_cache)
+                print(f"[CACHE] 財務保存: 有効{valid} / 総{len(fins_cache)}銘柄")
+        return jsonify({"data": data})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@atexit.register
+def on_exit():
+    if fins_cache:
+        save_json(FINS_CACHE_FILE, fins_cache)
+        valid = sum(1 for v in fins_cache.values() if v)
+        print(f"\n[CACHE] 終了時保存: 有効{valid} / 総{len(fins_cache)}銘柄 → {FINS_CACHE_FILE}")
+
 if __name__ == "__main__":
-    print("\n" + "="*48)
-    print("  J-Quants CORS プロキシ 起動中")
-    print("="*48)
-    print("  http://localhost:8765 で待機")
-    print("  APIキーはメモリのみ（ファイル保存なし）")
-    print("  停止: Ctrl+C")
-    print("="*48 + "\n")
+    valid = sum(1 for v in fins_cache.values() if v)
+    print("\n" + "="*52)
+    print("  J-Quants V2 CORS プロキシ 起動中")
+    print("="*52)
+    print(f"  http://localhost:8765 で待機")
+    print(f"  APIキー: メモリのみ（ファイル保存なし）")
+    print(f"  財務キャッシュ: 有効{valid} / 総{len(fins_cache)}銘柄")
+    print(f"  保存先: {CACHE_DIR}")
+    print(f"  停止: Ctrl+C")
+    print("="*52 + "\n")
     app.run(host="127.0.0.1", port=8765, debug=False)
+
+@app.route("/proxy/master/sample")
+def master_sample():
+    """マスターデータの最初の1件を返す（フィールド確認用）"""
+    global master_cache
+    if master_cache and len(master_cache) > 0:
+        return jsonify({"sample": master_cache[0], "total": len(master_cache)})
+    return jsonify({"error": "キャッシュなし"})
