@@ -404,11 +404,12 @@ async function runScreen(){
       // V2フィールド名
       const bps=safe(stmt.BPS);
       const ta=safe(stmt.TA);
-      const eq=safe(stmt.EqAR); // 既に比率（例: 0.367）
-      const fOp=safe(stmt.FOdP||stmt.FOP); // 予想経常利益
-      const op=safe(stmt.OdP||stmt.OP);   // 経常利益
-      const shares=safe(stmt.ShOutFY);
-      // FY決算でなければBPS空→スキップ
+      const eq=safe(stmt.EqAR);
+      // 予想経常利益: 当期予想→翌期予想の順で探す
+      const latestRec=rawStmts[rawStmts.length-1]||{};
+      const fOp=safe(latestRec.FOdP||latestRec.FOP||stmt.NxFOdP||stmt.NxFOP);
+      const op=safe(stmt.OdP||stmt.OP);
+      const shares=safe(stmt.ShOutFY||latestRec.ShOutFY);
       if(bps<=0||ta<=0||shares<=0)continue;
       const fEps=fOp>0?fOp*.7/shares:0;
       const roa=op>0?op/ta:0;
@@ -440,6 +441,9 @@ async function runScreen(){
     meta.innerHTML=`<strong>${results.length}銘柄</strong> が条件に一致
       ／ データ基準日: ${date}
       <span style="color:var(--amber);font-size:11px;margin-left:6px">※ Freeプラン: 約12週遅延</span>`;
+    // スクリーニング基準日・価格を詳細画面でも共有
+    screeningDate = date;
+    screeningPrices = prices;
     renderTable(results.slice(0,300));
     table.classList.remove("hidden");
   }catch(e){
@@ -449,7 +453,7 @@ async function runScreen(){
   }finally{btn.disabled=false;btn.textContent="スクリーニング実行";}}
 
 // ── テーブル ──
-let activeCode=null,chart=null;
+let activeCode=null,chart=null,screeningDate=null,screeningPrices={};
 function renderTable(rows){
   const tbody=document.getElementById("results-tbody");
   tbody.innerHTML="";
@@ -473,11 +477,11 @@ function renderTable(rows){
       <td style="color:var(--muted);font-size:11px">${(r.sector||"").replace("業","")}</td>`;
     tr.addEventListener("click",()=>{
       document.querySelectorAll("#results-tbody tr").forEach(t=>t.classList.remove("active"));
-      tr.classList.add("active");loadDetail(r.code);});
+      tr.classList.add("active");loadDetail(r.code, r);});
     tbody.appendChild(tr);});}
 
 // ── 詳細 ──
-async function loadDetail(code){
+async function loadDetail(code, screened){
   activeCode=code;
   document.getElementById("d-empty").classList.add("hidden");
   const dc=document.getElementById("d-content");
@@ -485,52 +489,81 @@ async function loadDetail(code){
   dc.innerHTML='<div class="loading-wrap" style="padding:40px"><div class="spinner"></div><div class="loading-text">取得中…</div></div>';
   if(chart){chart.destroy();chart=null;}
   try{
+    // 財務・株価を並列取得（株価は全期間）
     const [fr,pr]=await Promise.all([
       fetch(`${PROXY}/proxy/fins?code=${code}`).then(r=>r.json()),
       fetch(`${PROXY}/proxy/prices?code=${code}`).then(r=>r.json())]);
-    // 旧形式（オブジェクト）・新形式（配列）両対応
     let stmts=fr.data||[];
     if(!Array.isArray(stmts)) stmts=[stmts];
     const quotes=pr.data||[];
     const info=(masterCache||[]).find(s=>s.Code===code)||{};
 
-    // 財務履歴
-    const hist=[];
-    stmts.slice(-8).forEach(s=>{
-      const bps=safe(s.BPS),ta=safe(s.TA),
-            eq=safe(s.EqAR),
-            fOp=safe(s.FOdP||s.FOP),
-            op=safe(s.OdP||s.OP),ns=safe(s.Sales),
-            shares=safe(s.ShOutFY);
-      if(ta<=0||bps<=0||shares<=0)return;
-      const fEps=fOp>0?fOp*.7/shares:0,roa=op>0?op/ta:0;
-      const t=calcTheory(bps,fEps,roa,eq,1);
-      hist.push({period:(s.CurFYEn||s.DiscDate||"").slice(0,7),
-        theory:t.theory,bps:Math.round(bps),fEps:Math.round(fEps*10)/10,
-        roa:Math.round(roa*100*10)/10,eq:Math.round(eq*100*10)/10,
-        sales:Math.round(ns/1e8*10)/10,opProfit:Math.round(op/1e8*10)/10});});
-
-    // BPSがある最新FYレコードを優先
-    const fyStmts=stmts.filter(s=>s.CurPerType==="FY"&&s.BPS);
+    // ── 財務データの準備 ──
+    // FY決算でBPSがある最新レコード（資産価値計算用）
+    const fyStmts=stmts.filter(s=>s.CurPerType==="FY"&&parseFloat(s.BPS||0)>0);
     const ls=fyStmts.length?fyStmts[fyStmts.length-1]:(stmts.length?stmts[stmts.length-1]:{});
-    const lq=quotes.length?quotes[quotes.length-1]:{};
-    const bps=safe(ls.BPS),ta=safe(ls.TA),
-          eq=safe(ls.EqAR),
-          fOp=safe(ls.FOdP||ls.FOP),
-          op=safe(ls.OdP||ls.OP),
-          shares=safe(ls.ShOutFY);
-    const price=safe(lq.C||lq.Close);
-    const div=safe(ls.DivAnn||ls.NxFDivAnn);
-    const fEps=fOp>0&&shares>0?fOp*.7/shares:0,roa=op>0?op/ta:0;
-    const pbr=bps>0&&price>0?price/bps:1;
+
+    // 予想経常利益: 最新レコードから遡って最初に値がある FOdP/FOP を使用
+    let fOp=0;
+    for(let i=stmts.length-1;i>=0;i--){
+      const v=safe(stmts[i].FOdP||stmts[i].FOP);
+      if(v>0){fOp=v;break;}
+    }
+    // 配当: 最新の予想配当を遡って取得
+    let div=0;
+    for(let i=stmts.length-1;i>=0;i--){
+      const v=safe(stmts[i].FDivAnn||stmts[i].FDivFY||stmts[i].DivAnn||stmts[i].NxFDivAnn);
+      if(v>0){div=v;break;}
+    }
+
+    const bps=safe(ls.BPS),ta=safe(ls.TA),eq=safe(ls.EqAR);
+    const op=safe(ls.OdP||ls.OP);
+    const shares=safe(ls.ShOutFY);
+    const fEps=fOp>0&&shares>0?fOp*.7/shares:0;
+    const roa=op>0&&ta>0?op/ta:0;
+
+    // ── 株価: スクリーニング基準日の価格を優先使用 ──
+    const basePrice = screened ? screened.price : 0;
+    // 最新株価（参考表示用）
+    const latestQ=quotes.length?quotes[quotes.length-1]:{};
+    const latestPrice=safe(latestQ.C||latestQ.Close);
+
+    // 計算はスクリーニング基準日価格で実施
+    const price = basePrice || latestPrice;
+    const pbr=bps>0&&price>0?Math.round(price/bps*100)/100:1;
     const t=calcTheory(bps,fEps,roa,eq,pbr);
     const a=calcAlpha(t.theory,price),lv=levelOf(a);
     const div4=div>0?Math.round(div*25):0;
+
+    // 株価チャート（全期間）
     const priceHist=quotes.slice(-120).filter(q=>q.C||q.Close)
       .map(q=>({date:(q.Date||"").slice(5),close:q.C||q.Close}));
 
-    renderDetail({info,code,price,t,a,lv,lcolor:LCOLOR[lv],bps,fEps,roa,eq,pbr,
-      div,div4,divYield:div>0&&price>0?Math.round(div/price*10000)/100:0,hist,priceHist});
+    // 財務履歴（直近8期のFY）
+    const hist=[];
+    fyStmts.slice(-8).forEach(s=>{
+      const _bps=safe(s.BPS),_ta=safe(s.TA),_eq=safe(s.EqAR);
+      const _op=safe(s.OdP||s.OP),_ns=safe(s.Sales),_sh=safe(s.ShOutFY);
+      // その期の予想EPS（FY確定時点のFOdPまたは前期NxFOdP）
+      let _fOp=safe(s.FOdP||s.FOP);
+      const _fEps=_fOp>0&&_sh>0?_fOp*.7/_sh:0;
+      const _roa=_op>0&&_ta>0?_op/_ta:0;
+      const _t=calcTheory(_bps,_fEps,_roa,_eq,1);
+      hist.push({
+        period:(s.CurFYEn||"").slice(0,7),
+        theory:_t.theory, bps:Math.round(_bps),
+        fEps:Math.round(_fEps*10)/10,
+        roa:Math.round(_roa*100*10)/10,
+        eq:Math.round(_eq*100*10)/10,
+        sales:Math.round(_ns/1e8*10)/10,
+        opProfit:Math.round(_op/1e8*10)/10
+      });
+    });
+
+    renderDetail({info,code,price,latestPrice,screeningDate,t,a,lv,
+      lcolor:LCOLOR[lv]||"#6b7280",bps,fEps,roa,eq,pbr,
+      div,div4,divYield:div>0&&price>0?Math.round(div/price*10000)/100:0,
+      hist,priceHist});
   }catch(e){dc.innerHTML=`<div class="empty-detail">エラー: ${e.message}</div>`;}}
 
 function renderDetail(d){
@@ -547,8 +580,8 @@ function renderDetail(d){
       <button class="close-btn" id="close-detail">✕</button>
     </div>
     <div class="metric-grid">
-      <div class="mc hl"><div class="ml">株価（基準日）</div>
-        <div class="mv">¥${d.price.toLocaleString()}</div><div class="ms">PBR: ${d.pbr}倍</div></div>
+      <div class="mc hl"><div class="ml">株価（基準日: ${d.screeningDate||"―"}）</div>
+        <div class="mv">¥${d.price.toLocaleString()}</div><div class="ms">PBR: ${Math.round(d.pbr*100)/100}倍${d.latestPrice&&d.latestPrice!==d.price?` ／ 参考最新: <span style="color:var(--amber)">¥${d.latestPrice.toLocaleString()}</span>`:""}</div></div>
       <div class="mc hl"><div class="ml">α値（割安度）</div>
         <div class="mv" style="color:${ac}">${s}${d.a}%</div>
         <div class="ms"><span class="lbadge" style="background:${d.lcolor}">${d.lv}</span></div></div>
