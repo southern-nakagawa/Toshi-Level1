@@ -200,7 +200,7 @@ td:nth-child(2){max-width:160px;overflow:hidden;text-overflow:ellipsis}
         <span style="font-size:11px;margin-top:8px;display:block">⏱ Freeプランは初回取得に15〜30分かかります。業種・市場で絞り込むと短縮できます。</span></div>
       <table id="results-table" class="hidden">
         <thead><tr id="results-thead">
-          <th>コード</th>
+          <th class="sortable" data-key="code" style="text-align:left">コード<span class="sort-ind"></span></th>
           <th>銘柄名</th>
           <th class="sortable" data-key="price">株価<span class="sort-ind"></span></th>
           <th class="sortable" data-key="theory">理論株価<span class="sort-ind"></span></th>
@@ -374,11 +374,18 @@ function onHeaderClick(key){
   if(lastResults.length)renderTable(applySort(lastResults).slice(0,300));
 }
 
+const STR_SORT=new Set(["code","name","sector","market"]);
 function applySort(rows){
   return[...rows].sort((a,b)=>{
     for(const{key,dir}of sortKeys){
-      const va=a[key]??0, vb=b[key]??0;
-      if(va!==vb)return dir==="desc"?vb-va:va-vb;
+      const va=a[key]??(STR_SORT.has(key)?"":0);
+      const vb=b[key]??(STR_SORT.has(key)?"":0);
+      if(va===vb)continue;
+      if(STR_SORT.has(key)){
+        const c=String(va).localeCompare(String(vb),"ja");
+        return dir==="desc"?-c:c;
+      }
+      return dir==="desc"?vb-va:va-vb;
     }
     return 0;
   });
@@ -731,6 +738,35 @@ function closeDetail(){
   if(chart){chart.destroy();chart=null;}
 }
 
+// ══ 株式分割調整 ════════════════════════════════════════════════
+// J-Quants V2: AdjustmentClose があれば直接使用、なければ AdjustmentFactor で逆算
+function getSplitAdjustedHistory(quotes){
+  if(!quotes.length)return[];
+  const sample=quotes[quotes.length-1];
+  // AdjustmentClose フィールドがある場合はそちらを優先
+  if(sample.AdjustmentClose!==undefined||sample.AdjClose!==undefined){
+    return quotes.map(q=>({
+      date:(q.Date||"").slice(5),
+      close:parseFloat(q.AdjustmentClose??q.AdjClose??q.C??q.Close??0)
+    })).filter(p=>p.close>0);
+  }
+  // フォールバック: AdjustmentFactor を使って最新日基準に逆算
+  // 最新日から過去へ遡り、分割日の係数を累積して掛け合わせる
+  const n=quotes.length;
+  const adjClose=new Array(n);
+  let cumAdj=1.0;
+  for(let i=n-1;i>=0;i--){
+    const c=parseFloat(quotes[i].C??quotes[i].Close??0);
+    adjClose[i]=c*cumAdj;
+    const af=parseFloat(quotes[i].AdjustmentFactor??1);
+    if(af>0&&af!==1)cumAdj*=af; // 過去に向かって分割係数を累積
+  }
+  return quotes.map((q,i)=>({
+    date:(q.Date||"").slice(5),
+    close:Math.round(adjClose[i]*100)/100
+  })).filter(p=>p.close>0);
+}
+
 // ══ 詳細 ════════════════════════════════════════════════════════
 async function loadDetail(code,screened){
   activeCode=code;
@@ -792,9 +828,8 @@ async function loadDetail(code,screened){
     const lv  =levelOf(a);
     const div4=div>0?Math.round(div*25):0;
 
-    // 株価チャート（直近120件）
-    const priceHist=quotes.slice(-120).filter(q=>q.C||q.Close)
-      .map(q=>({date:(q.Date||"").slice(5),close:q.C||q.Close}));
+    // 株価チャート（直近120件・株式分割調整済み）
+    const priceHist=getSplitAdjustedHistory(quotes).slice(-120);
 
     // 財務履歴（直近8期FY）
     const hist=[];
@@ -889,13 +924,13 @@ function renderDetail(d){
         <div class="ms">財務健全性</div>
       </div>
       <div class="mc">
-        <div class="ml">BPS</div>
-        <div class="mv">¥${fmtPrice(d.bps)}</div>
+        <div class="ml">BPS（1株純資産）</div>
+        <div class="mv">${fmtPrice(d.bps)}</div>
         <div class="ms">解散価値の基準</div>
       </div>
       <div class="mc">
         <div class="ml">予想EPS（はっしゃん式）</div>
-        <div class="mv">¥${fmtEps(d.fEps)}</div>
+        <div class="mv">${fmtEps(d.fEps)}</div>
         <div class="ms">予想経常利益×0.7÷株式数</div>
       </div>
       ${d.div>0?`
@@ -932,8 +967,8 @@ function renderDetail(d){
         <span class="bar-val" style="color:var(--accent)">¥${fmtPrice(d.div4)}</span>
       </div>`:""}
     </div>
-    <div class="chart-wrap"><h4>株価推移（直近）</h4>
-      <canvas id="price-chart" height="140"></canvas>
+    <div class="chart-wrap"><h4>株価推移（直近） <span style="font-size:10px;color:var(--muted)">— 株価 &nbsp;— 理論株価 &nbsp;— 上限株価${d.div>0?` &nbsp;<span style="color:#ef4444">— 配当利回り(右軸)</span>`:""}</span></h4>
+      <canvas id="price-chart" height="160"></canvas>
     </div>
     ${d.hist.length?`<div class="hist-wrap"><h4>財務履歴</h4>
       <table class="hist-tbl"><thead><tr>
@@ -943,8 +978,8 @@ function renderDetail(d){
         ${d.hist.map(h=>`<tr>
           <td>${h.period}</td>
           <td style="color:var(--gold)">¥${fmtPrice(h.theory)}</td>
-          <td>¥${fmtPrice(h.bps)}</td>
-          <td>¥${fmtEps(h.fEps)}</td>
+          <td>${fmtPrice(h.bps)}</td>
+          <td>${fmtEps(h.fEps)}</td>
           <td class="${h.roa>=5?"pos":h.roa<2?"neg":""}">${fmtPct1(h.roa)}%</td>
           <td class="${h.eq>=50?"pos":h.eq<30?"neg":""}">${fmtPct1(h.eq)}%</td>
           <td>${h.sales}</td>
@@ -965,18 +1000,52 @@ function renderDetail(d){
 
   if(d.priceHist.length){
     const ctx=document.getElementById("price-chart").getContext("2d");
+    const labels=d.priceHist.map(p=>p.date);
+    const closes=d.priceHist.map(p=>p.close);
+    const n=labels.length;
+    // 理論株価・上限株価は水平ライン（現在の計算値を全期間に適用）
+    const theoryLine=Array(n).fill(d.t.theory);
+    const upperLine =Array(n).fill(d.t.upper);
+    const datasets=[
+      {label:"株価",data:closes,
+        borderColor:"#3b82f6",backgroundColor:"rgba(59,130,246,.07)",
+        borderWidth:2,pointRadius:0,fill:true,tension:.3,yAxisID:"y"},
+      {label:"理論株価",data:theoryLine,
+        borderColor:"#eab308",backgroundColor:"transparent",
+        borderWidth:1.5,borderDash:[6,3],pointRadius:0,fill:false,tension:0,yAxisID:"y"},
+      {label:"上限株価",data:upperLine,
+        borderColor:"#f59e0b",backgroundColor:"transparent",
+        borderWidth:1.5,borderDash:[3,3],pointRadius:0,fill:false,tension:0,yAxisID:"y"},
+    ];
+    const scales={
+      x:{ticks:{color:"#64748b",font:{size:10},maxTicksLimit:8},grid:{color:"#1e2535"}},
+      y:{position:"left",ticks:{color:"#64748b",font:{size:10},callback:v=>"¥"+v.toLocaleString()},grid:{color:"#1e2535"}}
+    };
+    // 配当がある場合のみ利回りデータを追加
+    if(d.div>0){
+      const yieldLine=closes.map(c=>c>0?Math.round(d.div/c*10000)/100:null);
+      datasets.push({label:"配当利回り",data:yieldLine,
+        borderColor:"#ef4444",backgroundColor:"transparent",
+        borderWidth:1,borderDash:[5,3],pointRadius:0,fill:false,tension:.2,yAxisID:"y1"});
+      scales.y1={position:"right",
+        ticks:{color:"#ef4444",font:{size:10},callback:v=>v.toFixed(1)+"%"},
+        grid:{drawOnChartArea:false}};
+    }
     chart=new Chart(ctx,{type:"line",
-      data:{labels:d.priceHist.map(p=>p.date),
-        datasets:[{label:"株価",data:d.priceHist.map(p=>p.close),
-          borderColor:"#3b82f6",backgroundColor:"rgba(59,130,246,.08)",
-          borderWidth:1.5,pointRadius:0,fill:true,tension:.3}]},
+      data:{labels,datasets},
       options:{responsive:true,animation:false,
-        plugins:{legend:{display:false},
-          tooltip:{callbacks:{label:c=>"¥"+c.raw.toLocaleString()}}},
-        scales:{
-          x:{ticks:{color:"#64748b",font:{size:10},maxTicksLimit:8},grid:{color:"#1e2535"}},
-          y:{ticks:{color:"#64748b",font:{size:10},callback:v=>"¥"+v.toLocaleString()},grid:{color:"#1e2535"}}
-        }}});
+        interaction:{mode:"index",intersect:false},
+        plugins:{
+          legend:{display:true,labels:{color:"#94a3b8",font:{size:10},boxWidth:20,padding:10}},
+          tooltip:{callbacks:{
+            label:c=>{
+              if(c.dataset.yAxisID==="y1")return ` ${c.dataset.label}: ${c.raw}%`;
+              return ` ${c.dataset.label}: ¥${c.raw.toLocaleString()}`;
+            }
+          }}
+        },
+        scales
+      }});
   }
 }
 </script>
