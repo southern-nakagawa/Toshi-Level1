@@ -1,0 +1,197 @@
+/* ── CSS変数・リセット ───────────────────────────────── */
+:root{
+  --bg:#0b0f1a; --card:#141824; --border:#1e2535;
+  --text:#dde3f0; --muted:#64748b;
+  --accent:#3b82f6; --green:#10b981; --red:#ef4444;
+  --amber:#f59e0b; --gold:#eab308;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);
+  font-family:'Hiragino Kaku Gothic ProN','Yu Gothic',sans-serif;
+  font-size:14px;min-height:100vh}
+.hidden{display:none!important}
+
+/* ── 接続画面 ───────────────────────────────────────── */
+#connect-screen{display:flex;align-items:center;justify-content:center;
+  min-height:100vh;
+  background:radial-gradient(ellipse at 30% 40%,#0f1f3d,#0b0f1a 70%)}
+.connect-card{background:var(--card);border:1px solid var(--border);
+  border-radius:16px;padding:48px 40px;width:440px;
+  text-align:center;box-shadow:0 0 60px rgba(59,130,246,.08)}
+.connect-card h1{font-size:22px;font-weight:700;color:#fff;margin-bottom:6px}
+.connect-card .sub{color:var(--muted);font-size:12px;margin-bottom:28px}
+.connect-card label{display:block;text-align:left;font-size:12px;
+  color:var(--muted);margin-bottom:6px}
+.connect-card input{width:100%;padding:10px 14px;background:#0d1120;
+  border:1px solid var(--border);border-radius:8px;
+  color:var(--text);font-size:13px;font-family:monospace}
+.connect-card input:focus{outline:none;border-color:var(--accent)}
+.help{font-size:11px;color:var(--muted);margin-top:10px;
+  text-align:left;line-height:1.7}
+.help a{color:var(--accent)}
+.btn-primary{margin-top:20px;width:100%;padding:12px;
+  background:var(--accent);color:#fff;border:none;
+  border-radius:8px;font-size:14px;font-weight:600;cursor:pointer}
+.btn-primary:hover{background:#2563eb}
+.btn-primary:disabled{background:#334155;cursor:not-allowed}
+.error-msg{margin-top:12px;color:var(--red);font-size:12px;min-height:18px}
+
+/* ── ヘッダー ───────────────────────────────────────── */
+header{display:flex;align-items:center;justify-content:space-between;
+  padding:0 24px;height:56px;background:var(--card);
+  border-bottom:1px solid var(--border);
+  position:sticky;top:0;z-index:10;gap:8px}
+header h1{font-size:16px;font-weight:700;color:#fff;
+  white-space:nowrap;flex-shrink:0}
+.badge-ok{color:var(--green);font-size:12px;white-space:nowrap}
+.btn-sm{padding:5px 14px;background:transparent;
+  border:1px solid var(--border);color:var(--muted);
+  border-radius:6px;cursor:pointer;font-size:12px;white-space:nowrap}
+.btn-sm:hover{border-color:var(--accent);color:var(--accent)}
+
+/* ── フィルタパネル ─────────────────────────────────── */
+.filter-panel{background:var(--card);border-bottom:1px solid var(--border);
+  padding:10px 24px;display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+.fg{display:flex;flex-direction:column;gap:4px}
+.fg label{font-size:11px;color:var(--muted);white-space:nowrap}
+.fg select,.fg input[type=number]{
+  padding:5px 8px;background:#0d1120;border:1px solid var(--border);
+  border-radius:6px;color:var(--text);font-size:13px;width:120px}
+.fg select:focus,.fg input:focus{outline:none;border-color:var(--accent)}
+.fg.chk{flex-direction:row;align-items:center;gap:6px}
+.fg.chk label{font-size:12px;color:var(--text);margin:0}
+.btn-screen{padding:7px 20px;background:var(--accent);color:#fff;border:none;
+  border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;align-self:flex-end}
+.btn-screen:hover{background:#2563eb}
+.btn-screen:disabled{background:#334155;cursor:not-allowed}
+.btn-abort{padding:5px 12px;background:#7f1d1d;color:#fca5a5;
+  border:1px solid #991b1b;border-radius:6px;font-size:12px;
+  cursor:pointer;align-self:flex-end}
+.btn-abort:hover{background:#991b1b}
+
+/* フィルタ内コンパクト進捗バー */
+.screen-progress{flex-basis:100%;display:flex;align-items:center;
+  gap:8px;padding:2px 0;font-size:11px;color:var(--muted)}
+.sp-bar-bg{flex:1;max-width:200px;height:3px;background:#0d1120;
+  border-radius:2px;overflow:hidden}
+.sp-bar-fill{height:100%;background:var(--accent);
+  transition:width .3s;border-radius:2px;width:0%}
+
+/* ── レイアウト ─────────────────────────────────────── */
+#main-layout{display:flex;height:calc(100vh - 56px - 58px)}
+#results-pane{flex:1;overflow-y:auto;overflow-x:auto;padding:12px 20px}
+
+/* ── 結果メタ情報 ───────────────────────────────────── */
+.results-meta{font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.6}
+.results-meta strong{color:var(--text)}
+
+/* ── テーブル ───────────────────────────────────────── */
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead th{padding:7px 10px;background:#0d1120;color:var(--muted);
+  text-align:right;border-bottom:1px solid var(--border);
+  white-space:nowrap;font-weight:500;
+  position:sticky;top:0;z-index:1;user-select:none}
+thead th:first-child,thead th:nth-child(2){text-align:left}
+thead th.sortable{cursor:pointer}
+thead th.sortable:hover{color:var(--text);background:#111827}
+thead th.sort-active{color:var(--text)}
+.sort-ind{font-size:10px;margin-left:3px;opacity:.4}
+th.sort-active .sort-ind{opacity:1;color:var(--accent)}
+.sort-pri{font-size:9px;color:var(--accent);vertical-align:super}
+tbody tr{border-bottom:1px solid #141824;cursor:pointer;transition:background .1s}
+tbody tr:hover{background:#1a2035}
+tbody tr.active{background:#1e2a45}
+td{padding:6px 10px;text-align:right;white-space:nowrap}
+td:first-child,td:nth-child(2){text-align:left}
+td:first-child{font-family:monospace;color:var(--accent);font-size:13px}
+td:nth-child(2){max-width:150px;overflow:hidden;text-overflow:ellipsis}
+.lbadge{display:inline-block;padding:2px 8px;border-radius:4px;
+  font-size:11px;font-weight:600;color:#000}
+.num{font-family:'Courier New',monospace}
+.pos{color:var(--green)}.neg{color:var(--red)}.muted{color:var(--muted)}
+
+/* ── ローディング（マスター・株価取得中のみ使用） ─── */
+.loading-wrap{display:flex;flex-direction:column;align-items:center;
+  justify-content:center;padding:40px;gap:12px}
+.spinner{width:30px;height:30px;border:3px solid var(--border);
+  border-top-color:var(--accent);border-radius:50%;
+  animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-text{color:var(--muted);font-size:13px;text-align:center}
+.progress-bar{width:200px;height:4px;background:#0d1120;
+  border-radius:2px;overflow:hidden}
+.progress-fill{height:100%;background:var(--accent);
+  transition:width .3s;border-radius:2px}
+.placeholder{text-align:center;padding:60px;
+  color:var(--muted);font-size:13px}
+
+/* ── 詳細ペイン ─────────────────────────────────────── */
+#pane-resizer{width:5px;background:var(--border);cursor:col-resize;
+  flex-shrink:0;transition:background .15s;user-select:none}
+#pane-resizer:hover,#pane-resizer.dragging{background:var(--accent)}
+#detail-pane{width:460px;min-width:280px;border-left:1px solid var(--border);
+  background:var(--card);overflow-y:auto}
+.detail-header{padding:14px 20px;border-bottom:1px solid var(--border);
+  display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.d-code{font-family:monospace;font-size:12px;color:var(--accent)}
+.d-name{font-size:16px;font-weight:700;color:#fff;margin-top:2px}
+.d-sub{font-size:11px;color:var(--muted);margin-top:3px}
+.close-btn{background:none;border:none;color:var(--muted);
+  font-size:18px;cursor:pointer}
+.close-btn:hover{color:var(--text)}
+.watch-btn{padding:4px 10px;border:1px solid var(--border);
+  background:transparent;border-radius:5px;cursor:pointer;
+  font-size:12px;color:var(--muted);white-space:nowrap}
+.watch-btn:hover{border-color:var(--amber);color:var(--amber)}
+.watch-btn.watched{color:var(--amber);border-color:var(--amber)}
+.metric-grid{display:grid;grid-template-columns:1fr 1fr;
+  gap:1px;background:var(--border)}
+.mc{background:var(--card);padding:10px 16px}
+.mc.hl{background:#0f1929}
+.mc .ml{font-size:10px;color:var(--muted);margin-bottom:4px}
+.mc .mv{font-size:18px;font-weight:700;font-family:'Courier New',monospace}
+.mc .ms{font-size:11px;color:var(--muted);margin-top:2px}
+.bar-wrap{padding:12px 20px;border-bottom:1px solid var(--border)}
+.bar-wrap h4{font-size:11px;color:var(--muted);margin-bottom:8px}
+.bar-row{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.bar-lbl{font-size:11px;color:var(--muted);width:60px;text-align:right}
+.bar-bg{flex:1;height:8px;background:#0d1120;border-radius:4px;overflow:hidden}
+.bar-fill{height:100%;border-radius:4px;transition:width .4s}
+.bar-val{font-size:11px;font-family:monospace;width:76px}
+.chart-wrap{padding:10px 16px;border-bottom:1px solid var(--border)}
+.chart-wrap h4{font-size:11px;color:var(--muted);margin-bottom:6px}
+.chart-toggle{display:flex;gap:4px;margin-bottom:6px}
+.chart-toggle button{padding:3px 10px;font-size:11px;background:transparent;
+  border:1px solid var(--border);border-radius:4px;
+  color:var(--muted);cursor:pointer}
+.chart-toggle button.active{background:var(--accent);color:#fff;
+  border-color:var(--accent)}
+.hist-wrap{padding:10px 16px}
+.hist-wrap h4{font-size:11px;color:var(--muted);margin-bottom:6px}
+.hist-tbl{width:100%;font-size:11px;border-collapse:collapse}
+.hist-tbl th{color:var(--muted);text-align:right;
+  padding:3px 5px;font-weight:400}
+.hist-tbl th:first-child{text-align:left}
+.hist-tbl td{text-align:right;padding:3px 5px;
+  border-top:1px solid var(--border);font-family:monospace}
+.hist-tbl td:first-child{text-align:left;font-family:sans-serif;
+  color:var(--muted)}
+.empty-detail{display:flex;flex-direction:column;align-items:center;
+  justify-content:center;height:100%;color:var(--muted);
+  font-size:13px;padding:40px;text-align:center}
+
+/* ── BG・ウォッチリスト ─────────────────────────────── */
+.bg-label{display:flex;align-items:center;gap:5px;cursor:pointer;
+  font-size:12px;color:var(--muted)}
+.bg-label input{cursor:pointer;accent-color:var(--accent)}
+#bg-status{font-size:11px;color:var(--muted);white-space:nowrap}
+.wl-drag-handle{cursor:grab;color:var(--muted);font-size:14px;
+  padding:0 6px;user-select:none}
+.wl-drag-handle:active{cursor:grabbing}
+.wl-over{border-top:2px solid var(--accent)!important}
+.wl-badge{display:inline-block;background:var(--accent);color:#fff;
+  border-radius:10px;padding:0 5px;font-size:10px;
+  margin-left:3px;min-width:14px;text-align:center}
+.wl-item{display:flex;align-items:center;justify-content:space-between;
+  padding:10px 16px;border-bottom:1px solid var(--border)}
+.wl-item:hover{background:#1a2035}

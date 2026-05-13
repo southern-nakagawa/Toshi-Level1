@@ -5,146 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>理論株価スクリーナー</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
-<style>
-:root{--bg:#0b0f1a;--card:#141824;--border:#1e2535;--text:#dde3f0;--muted:#64748b;
-  --accent:#3b82f6;--green:#10b981;--red:#ef4444;--amber:#f59e0b;--gold:#eab308}
-*{box-sizing:border-box;margin:0;padding:0}
-body{background:var(--bg);color:var(--text);font-family:'Hiragino Kaku Gothic ProN','Yu Gothic',sans-serif;font-size:14px;min-height:100vh}
-.hidden{display:none!important}
-#connect-screen{display:flex;align-items:center;justify-content:center;min-height:100vh;
-  background:radial-gradient(ellipse at 30% 40%,#0f1f3d,#0b0f1a 70%)}
-.connect-card{background:var(--card);border:1px solid var(--border);border-radius:16px;
-  padding:48px 40px;width:440px;text-align:center;box-shadow:0 0 60px rgba(59,130,246,.08)}
-.connect-card h1{font-size:22px;font-weight:700;color:#fff;margin-bottom:6px}
-.connect-card .sub{color:var(--muted);font-size:12px;margin-bottom:28px}
-.connect-card label{display:block;text-align:left;font-size:12px;color:var(--muted);margin-bottom:6px}
-.connect-card input{width:100%;padding:10px 14px;background:#0d1120;border:1px solid var(--border);
-  border-radius:8px;color:var(--text);font-size:13px;font-family:monospace}
-.connect-card input:focus{outline:none;border-color:var(--accent)}
-.help{font-size:11px;color:var(--muted);margin-top:10px;text-align:left;line-height:1.7}
-.help a{color:var(--accent)}
-.btn-primary{margin-top:20px;width:100%;padding:12px;background:var(--accent);color:#fff;
-  border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer}
-.btn-primary:hover{background:#2563eb}
-.btn-primary:disabled{background:#334155;cursor:not-allowed}
-.error-msg{margin-top:12px;color:var(--red);font-size:12px;min-height:18px}
-header{display:flex;align-items:center;justify-content:space-between;
-  padding:0 24px;height:56px;background:var(--card);border-bottom:1px solid var(--border);
-  position:sticky;top:0;z-index:10;gap:8px}
-header h1{font-size:16px;font-weight:700;color:#fff;white-space:nowrap;flex-shrink:0}
-.badge-ok{color:var(--green);font-size:12px;white-space:nowrap}
-.btn-sm{padding:5px 14px;background:transparent;border:1px solid var(--border);
-  color:var(--muted);border-radius:6px;cursor:pointer;font-size:12px;white-space:nowrap}
-.btn-sm:hover{border-color:var(--accent);color:var(--accent)}
-.filter-panel{background:var(--card);border-bottom:1px solid var(--border);
-  padding:14px 24px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}
-.fg{display:flex;flex-direction:column;gap:4px}
-.fg label{font-size:11px;color:var(--muted);white-space:nowrap}
-.fg select,.fg input[type=number]{padding:6px 10px;background:#0d1120;border:1px solid var(--border);
-  border-radius:6px;color:var(--text);font-size:13px;width:140px}
-.fg select:focus,.fg input:focus{outline:none;border-color:var(--accent)}
-.fg.chk{flex-direction:row;align-items:center;gap:6px}
-.fg.chk label{font-size:12px;color:var(--text);margin:0}
-.btn-screen{padding:8px 24px;background:var(--accent);color:#fff;border:none;
-  border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;align-self:flex-end}
-.btn-screen:hover{background:#2563eb}
-.btn-screen:disabled{background:#334155;cursor:not-allowed}
-#main-layout{display:flex;height:calc(100vh - 56px - 62px)}
-#results-pane{flex:1;overflow-y:auto;overflow-x:auto;padding:14px 20px}
-.results-meta{font-size:12px;color:var(--muted);margin-bottom:10px}
-.results-meta strong{color:var(--text)}
-table{width:100%;border-collapse:collapse;font-size:12px}
-thead th{padding:8px 10px;background:#0d1120;color:var(--muted);text-align:right;
-  border-bottom:1px solid var(--border);white-space:nowrap;font-weight:500;
-  position:sticky;top:0;z-index:1;user-select:none}
-thead th:first-child,thead th:nth-child(2){text-align:left}
-thead th.sortable{cursor:pointer}
-thead th.sortable:hover{color:var(--text);background:#111827}
-thead th.sort-active{color:var(--text)}
-.sort-ind{font-size:10px;margin-left:3px;opacity:.4}
-th.sort-active .sort-ind{opacity:1;color:var(--accent)}
-.sort-pri{font-size:9px;color:var(--accent);vertical-align:super}
-tbody tr{border-bottom:1px solid #141824;cursor:pointer;transition:background .1s}
-tbody tr:hover{background:#1a2035}
-tbody tr.active{background:#1e2a45}
-td{padding:7px 10px;text-align:right;white-space:nowrap}
-td:first-child,td:nth-child(2){text-align:left}
-td:first-child{font-family:monospace;color:var(--accent);font-size:13px}
-td:nth-child(2){max-width:160px;overflow:hidden;text-overflow:ellipsis}
-.lbadge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;color:#000}
-.num{font-family:'Courier New',monospace}
-.pos{color:var(--green)}.neg{color:var(--red)}.muted{color:var(--muted)}
-.loading-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;
-  padding:60px;gap:14px}
-.spinner{width:34px;height:34px;border:3px solid var(--border);border-top-color:var(--accent);
-  border-radius:50%;animation:spin .8s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-.loading-text{color:var(--muted);font-size:13px;text-align:center}
-.placeholder{text-align:center;padding:60px;color:var(--muted);font-size:13px}
-#detail-pane{width:440px;min-width:440px;border-left:1px solid var(--border);
-  background:var(--card);overflow-y:auto}
-.detail-header{padding:16px 20px;border-bottom:1px solid var(--border);
-  display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
-.d-code{font-family:monospace;font-size:12px;color:var(--accent)}
-.d-name{font-size:16px;font-weight:700;color:#fff;margin-top:2px}
-.d-sub{font-size:11px;color:var(--muted);margin-top:3px}
-.close-btn{background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer}
-.close-btn:hover{color:var(--text)}
-.watch-btn{padding:4px 10px;border:1px solid var(--border);background:transparent;
-  border-radius:5px;cursor:pointer;font-size:12px;color:var(--muted);white-space:nowrap}
-.watch-btn:hover{border-color:var(--amber);color:var(--amber)}
-.watch-btn.watched{color:var(--amber);border-color:var(--amber)}
-.metric-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border)}
-.mc{background:var(--card);padding:12px 16px}
-.mc.hl{background:#0f1929}
-.mc .ml{font-size:10px;color:var(--muted);margin-bottom:4px}
-.mc .mv{font-size:20px;font-weight:700;font-family:'Courier New',monospace}
-.mc .ms{font-size:11px;color:var(--muted);margin-top:2px}
-.bar-wrap{padding:14px 20px;border-bottom:1px solid var(--border)}
-.bar-wrap h4{font-size:11px;color:var(--muted);margin-bottom:10px}
-.bar-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
-.bar-lbl{font-size:11px;color:var(--muted);width:60px;text-align:right}
-.bar-bg{flex:1;height:8px;background:#0d1120;border-radius:4px;overflow:hidden}
-.bar-fill{height:100%;border-radius:4px;transition:width .4s}
-.bar-val{font-size:11px;font-family:monospace;width:76px}
-.chart-wrap{padding:12px 16px;border-bottom:1px solid var(--border)}
-.chart-wrap h4{font-size:11px;color:var(--muted);margin-bottom:8px}
-.hist-wrap{padding:12px 16px}
-.hist-wrap h4{font-size:11px;color:var(--muted);margin-bottom:8px}
-.hist-tbl{width:100%;font-size:11px;border-collapse:collapse}
-.hist-tbl th{color:var(--muted);text-align:right;padding:4px 6px;font-weight:400}
-.hist-tbl th:first-child{text-align:left}
-.hist-tbl td{text-align:right;padding:4px 6px;border-top:1px solid var(--border);font-family:monospace}
-.hist-tbl td:first-child{text-align:left;font-family:sans-serif;color:var(--muted)}
-.empty-detail{display:flex;flex-direction:column;align-items:center;justify-content:center;
-  height:100%;color:var(--muted);font-size:13px;padding:40px;text-align:center}
-.progress-bar{width:100%;height:4px;background:#0d1120;border-radius:2px;margin-top:12px;overflow:hidden}
-.progress-fill{height:100%;background:var(--accent);transition:width .3s;border-radius:2px}
-/* BG toggle */
-.bg-label{display:flex;align-items:center;gap:5px;cursor:pointer;font-size:12px;color:var(--muted)}
-.bg-label input{cursor:pointer;accent-color:var(--accent)}
-#bg-status{font-size:11px;color:var(--muted);white-space:nowrap}
-/* pane resizer */
-#pane-resizer{width:5px;background:var(--border);cursor:col-resize;flex-shrink:0;
-  transition:background .15s;user-select:none}
-#pane-resizer:hover,#pane-resizer.dragging{background:var(--accent)}
-/* watchlist */
-.btn-abort{padding:8px 16px;background:#7f1d1d;color:#fca5a5;border:1px solid #991b1b;
-  border-radius:6px;font-size:13px;cursor:pointer;align-self:flex-end}
-.btn-abort:hover{background:#991b1b}
-.chart-toggle{display:flex;gap:4px;margin-bottom:6px}
-.chart-toggle button{padding:3px 10px;font-size:11px;background:transparent;
-  border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer}
-.chart-toggle button.active{background:var(--accent);color:#fff;border-color:var(--accent)}
-.wl-drag-handle{cursor:grab;color:var(--muted);font-size:14px;padding:0 6px;user-select:none}
-.wl-drag-handle:active{cursor:grabbing}
-.wl-over{border-top:2px solid var(--accent)!important}
-.wl-badge{display:inline-block;background:var(--accent);color:#fff;border-radius:10px;
-  padding:0 5px;font-size:10px;margin-left:3px;min-width:14px;text-align:center}
-.wl-item{display:flex;align-items:center;justify-content:space-between;
-  padding:10px 16px;border-bottom:1px solid var(--border)}
-.wl-item:hover{background:#1a2035}
-</style>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 
@@ -187,19 +48,26 @@ td:nth-child(2){max-width:160px;overflow:hidden;text-overflow:ellipsis}
       <select id="f-market"><option value="">すべて</option></select></div>
     <div class="fg"><label>業種（33業種）</label>
       <select id="f-sector"><option value="">すべて</option></select></div>
-    <div class="fg"><label>α値 下限 (%)</label>
-      <input type="number" id="f-mina" value="10"></div>
-    <div class="fg"><label>α値 上限 (%)</label>
-      <input type="number" id="f-maxa" value="200"></div>
-    <div class="fg"><label>自己資本比率 下限 (%)</label>
-      <input type="number" id="f-eq" value="30"></div>
-    <div class="fg"><label>ROA 下限 (%)</label>
-      <input type="number" id="f-roa" value="0"></div>
+    <div class="fg"><label>α値 下限(%)</label>
+      <input type="number" id="f-mina" value="10" style="width:80px"></div>
+    <div class="fg"><label>α値 上限(%)</label>
+      <input type="number" id="f-maxa" value="200" style="width:80px"></div>
+    <div class="fg"><label>自己資本比率 下限(%)</label>
+      <input type="number" id="f-eq" value="30" style="width:80px"></div>
+    <div class="fg"><label>ROA 下限(%)</label>
+      <input type="number" id="f-roa" value="0" style="width:80px"></div>
+    <div class="fg"><label>配当利回り 下限(%)</label>
+      <input type="number" id="f-div" value="0" step="0.1" style="width:80px"></div>
     <div class="fg chk">
       <input type="checkbox" id="f-notrap" checked>
       <label for="f-notrap">バリュートラップ除外</label></div>
     <button class="btn-screen" id="screen-btn">スクリーニング実行</button>
     <button class="btn-abort hidden" id="abort-btn">⏹ 中断</button>
+    <!-- コンパクト進捗バー（財務データ取得中） -->
+    <div id="screen-progress" class="screen-progress hidden">
+      <div class="sp-bar-bg"><div class="sp-bar-fill" id="sp-bar-fill"></div></div>
+      <span id="sp-text"></span>
+    </div>
   </div>
 
   <div id="main-layout">
@@ -630,7 +498,7 @@ document.getElementById("abort-btn").addEventListener("click",()=>{
   if(screenAbortCtrl)screenAbortCtrl.abort();
 });
 // フィルター変更時に実行中のスクリーニングを中断
-["f-market","f-sector","f-mina","f-maxa","f-eq","f-roa","f-notrap"].forEach(id=>{
+["f-market","f-sector","f-mina","f-maxa","f-eq","f-roa","f-div","f-notrap"].forEach(id=>{
   const el=document.getElementById(id);
   if(el)el.addEventListener("change",()=>{
     if(document.getElementById("screen-btn").disabled&&screenAbortCtrl)
@@ -643,8 +511,92 @@ function setProgress(pct,text,sub=""){
   if(text)document.getElementById("loading-text").textContent=text;
   if(sub!==undefined)document.getElementById("loading-sub").textContent=sub;}
 
+function setSpProgress(pct,text){
+  const sp=document.getElementById("screen-progress");
+  const fill=document.getElementById("sp-bar-fill");
+  const txt=document.getElementById("sp-text");
+  sp.classList.remove("hidden");
+  fill.style.width=pct+"%";
+  txt.textContent=text;}
+
+function hideSpProgress(){
+  document.getElementById("screen-progress").classList.add("hidden");
+  document.getElementById("sp-bar-fill").style.width="0%";}
+
+// ── スクリーニング計算（共通）─────────────────────────
+function calcScreenResults(codes,prices,filters){
+  const {minA,maxA,minEq,minRoa,minDiv,noTrap}=filters;
+  const infoMap={};(masterCache||[]).forEach(s=>infoMap[s.Code]=s);
+  const results=[];
+  for(const code of codes){
+    const rawStmts=finsCache[code];
+    if(!rawStmts||!rawStmts.length)continue;
+    const fyRecs=rawStmts.filter(s=>s.CurPerType==="FY"&&parseFloat(s.BPS||0)>0);
+    const stmt=fyRecs.length?fyRecs[fyRecs.length-1]:rawStmts[rawStmts.length-1];
+    if(!stmt)continue;
+    const pq=prices[code];if(!pq)continue;
+    const price=safe(pq.Close||pq.C||pq.AdjustmentClose);
+    if(price<=0)continue;
+    const bps   =safe(stmt.BPS);
+    const ta    =safe(stmt.TA||stmt.TotalAssets);
+    const eq    =safe(stmt.EqAR||stmt.EquityToAssetRatio);
+    const latestRec=rawStmts[rawStmts.length-1]||{};
+    const fOp   =safe(latestRec.FOdP||latestRec.FOP||stmt.NxFOdP||stmt.NxFOP);
+    const op    =safe(stmt.OdP||stmt.OP||stmt.OperatingProfit);
+    const shares=safe(stmt.ShOutFY||latestRec.ShOutFY||stmt.NumberOfSharesIssued);
+    if(bps<=0||ta<=0||shares<=0)continue;
+    const eqNorm=eq>1?eq/100:eq;
+    const fEps=fOp>0?fOp*.7/shares:0;
+    const roa =op>0?op/ta:0;
+    const pbr =bps>0?price/bps:1;
+    let div=0;
+    for(let i=rawStmts.length-1;i>=0;i--){
+      const v=safe(rawStmts[i].FDivAnn||rawStmts[i].FDivFY||rawStmts[i].DivAnn||rawStmts[i].NxFDivAnn);
+      if(v>0){div=v;break;}
+    }
+    const t=calcTheory(bps,fEps,roa,eqNorm,pbr);
+    const a=calcAlpha(t.theory,price);
+    if(a===null)continue;
+    if(a<minA||a>maxA)continue;
+    if(eqNorm*100<minEq)continue;
+    if(roa*100<minRoa)continue;
+    const divYield=div>0&&price>0?Math.round(div/price*10000)/100:0;
+    if(minDiv>0&&divYield<minDiv)continue;
+    const vt=pbr<0.3&&a>100;
+    if(noTrap&&vt)continue;
+    const si=infoMap[code]||{};
+    const lv=levelOf(a);
+    results.push({
+      code, name:si.CoName||"", market:si.MktNm||"", sector:si.S33Nm||"",
+      price,...t,
+      alpha:Math.round(a*10)/10,
+      level:lv,lcolor:LCOLOR[lv]||"#6b7280",
+      bps:Math.round(bps),
+      fEps:Math.round(fEps*10)/10,
+      roa:Math.round(roa*1000)/10,
+      eq:Math.round(eq*1000)/10,
+      pbr:Math.round(pbr*100)/100,
+      divYield, vt
+    });
+  }
+  return results;
+}
+
+function showScreenResults(results,date,suffix){
+  lastResults=results;
+  const meta=document.getElementById("results-meta");
+  const table=document.getElementById("results-table");
+  const placeholder=document.getElementById("placeholder");
+  placeholder.classList.add("hidden");
+  table.classList.remove("hidden");
+  meta.classList.remove("hidden");
+  meta.innerHTML=`<strong>${results.length}銘柄</strong>が条件に一致 ／ 基準日:${date}
+    <span style="color:var(--amber);font-size:11px;margin-left:4px">※ Freeプラン約12週遅延</span>
+    ${suffix?`<span style="color:var(--muted);font-size:11px;margin-left:8px">${suffix}</span>`:""}`;
+  renderTable(applySort(results).slice(0,300));
+}
+
 async function runScreen(){
-  // 既存スクリーニングを中断して新規開始
   if(screenAbortCtrl)screenAbortCtrl.abort();
   screenAbortCtrl=new AbortController();
   const sig=screenAbortCtrl.signal;
@@ -653,43 +605,43 @@ async function runScreen(){
   const abortBtn=document.getElementById("abort-btn");
   const loading=document.getElementById("loading");
   const placeholder=document.getElementById("placeholder");
-  const table=document.getElementById("results-table");
-  const meta=document.getElementById("results-meta");
-  btn.disabled=true; btn.textContent="取得中…";
-  abortBtn.classList.remove("hidden");
-  loading.classList.remove("hidden");
-  table.classList.add("hidden");
-  placeholder.classList.add("hidden");
-  meta.classList.add("hidden");
-  setProgress(0,"準備中…","");
 
-  const minA  =parseFloat(document.getElementById("f-mina").value)||-999;
-  const maxA  =parseFloat(document.getElementById("f-maxa").value)||999;
-  const minEq =parseFloat(document.getElementById("f-eq").value)||0;
-  const minRoa=parseFloat(document.getElementById("f-roa").value)||0;
-  const market=document.getElementById("f-market").value;
-  const sector=document.getElementById("f-sector").value;
-  const noTrap=document.getElementById("f-notrap").checked;
+  btn.disabled=true; btn.textContent="実行中…";
+  abortBtn.classList.remove("hidden");
+  hideSpProgress();
+
+  const filters={
+    minA  :parseFloat(document.getElementById("f-mina").value)||-999,
+    maxA  :parseFloat(document.getElementById("f-maxa").value)||999,
+    minEq :parseFloat(document.getElementById("f-eq").value)||0,
+    minRoa:parseFloat(document.getElementById("f-roa").value)||0,
+    minDiv:parseFloat(document.getElementById("f-div").value)||0,
+    noTrap:document.getElementById("f-notrap").checked,
+    market:document.getElementById("f-market").value,
+    sector:document.getElementById("f-sector").value,
+  };
 
   try{
-    // 1. 銘柄一覧
-    setProgress(5,"銘柄一覧取得中…","");
+    // 1. 銘柄マスター
     if(!masterCache){
+      loading.classList.remove("hidden");
+      setProgress(10,"銘柄一覧取得中…","");
       const r=await fetch(`${PROXY}/proxy/master`,{signal:sig});
       const d=await r.json();
       if(!r.ok)throw new Error(d.error);
-      masterCache=d.data||[];}
-
+      masterCache=d.data||[];
+    }
     let stocks=masterCache;
-    if(market)stocks=stocks.filter(s=>s.MktNm===market);
-    if(sector)stocks=stocks.filter(s=>s.S33Nm===sector);
+    if(filters.market)stocks=stocks.filter(s=>s.MktNm===filters.market);
+    if(filters.sector)stocks=stocks.filter(s=>s.S33Nm===filters.sector);
 
-    // 2. 株価（基準日一括）― 祝日対応：データが空なら前営業日へ遡る
+    // 2. 株価（祝日対応：空なら前営業日へ遡る）
     let date=latestDate();
     for(let attempt=0;attempt<12;attempt++){
       if(sig.aborted)throw new DOMException("中断","AbortError");
       if(!priceCache[date]){
-        setProgress(15,`株価データ取得中…`,`基準日: ${date}${attempt>0?" (祝日調整中…)":""}`);
+        loading.classList.remove("hidden");
+        setProgress(30,`株価データ取得中…`,`基準日:${date}${attempt>0?" (前営業日を検索中…)":""}`);
         const r=await fetch(`${PROXY}/proxy/prices?date=${date}`,{signal:sig});
         const d=await r.json();
         if(!r.ok)throw new Error(d.error);
@@ -699,143 +651,69 @@ async function runScreen(){
           if(c)priceCache[date][q.Code]=q;
         });
       }
-      if(Object.keys(priceCache[date]).length>0)break; // データあり
-      // 祝日等でデータなし→前営業日へ
+      if(Object.keys(priceCache[date]).length>0)break;
       const prev=new Date(date+"T12:00:00Z");
       prev.setDate(prev.getDate()-1);
       while(prev.getDay()===0||prev.getDay()===6)prev.setDate(prev.getDate()-1);
       date=prev.toISOString().slice(0,10);
     }
+    loading.classList.add("hidden");
     const prices=priceCache[date];
-    let codes=stocks.map(s=>s.Code).filter(c=>prices[c]);
+    const allCodes=stocks.map(s=>s.Code).filter(c=>prices[c]);
 
-    // 3. 財務データ（未取得分のみ取得）
-    const missing=codes.filter(c=>!finsCache[c]||!finsCache[c].length);
-    const total=missing.length;
-    if(total>0){
-      setProgress(20,`財務データ取得中…`,`0 / ${total} 銘柄（Freeプランのため時間がかかります）`);
-      for(let i=0;i<missing.length;i++){
+    // 3a. Phase1: キャッシュ済みを即スクリーニング表示
+    const cachedCodes=allCodes.filter(c=>finsCache[c]&&finsCache[c].length);
+    const missingCodes=allCodes.filter(c=>!finsCache[c]||!finsCache[c].length);
+
+    if(cachedCodes.length>0){
+      const partial=calcScreenResults(cachedCodes,prices,filters);
+      showScreenResults(partial,date,
+        missingCodes.length>0?`財務取得中 ${missingCodes.length}件…`:"");
+    }else if(missingCodes.length===0){
+      showScreenResults([],date,"");
+    }
+
+    // 3b. Phase2: 未取得分を順次取得して更新
+    if(missingCodes.length>0){
+      setSpProgress(0,`0/${missingCodes.length}件 取得中`);
+      for(let i=0;i<missingCodes.length;i++){
         if(sig.aborted)throw new DOMException("中断","AbortError");
-        const code=missing[i];
+        const code=missingCodes[i];
         try{
           const r=await fetch(`${PROXY}/proxy/fins?code=${code}`,{signal:sig});
           const d=await r.json();
           finsCache[code]=d.data||[];
         }catch(e){
           if(e.name==="AbortError")throw e;
-          finsCache[code]=[];}
-        const pct=20+Math.round(i/total*65);
-        setProgress(pct,`財務データ取得中…`,
-          `${i+1} / ${total} 銘柄 ｜ 残り約${Math.round((total-i-1)*14/60)}分`);
+          finsCache[code]=[];
+        }
+        const done=i+1;
+        const pct=Math.round(done/missingCodes.length*100);
+        const remain=Math.round((missingCodes.length-done)*14/60);
+        setSpProgress(pct,`${done}/${missingCodes.length}件 取得中${remain>0?` 残約${remain}分`:""}`);
+        if(done%20===0||done===missingCodes.length){
+          const r=calcScreenResults(allCodes,prices,filters);
+          showScreenResults(r,date,
+            done<missingCodes.length?`財務取得中 ${missingCodes.length-done}件残…`:"");
+        }
       }
+      hideSpProgress();
     }
 
-    // ── デバッグ診断 ──
-    const dbg={
-      master: masterCache.length,
-      afterFilter: stocks.length,
-      priceKeys: Object.keys(prices).length,
-      codesWithPrice: codes.length,
-      finsCached: Object.keys(finsCache).filter(c=>finsCache[c]&&finsCache[c].length).length,
-      masterSample: masterCache[0]?JSON.stringify({Code:masterCache[0].Code,MktNm:masterCache[0].MktNm}):"none",
-      priceSample: (()=>{const k=Object.keys(prices)[0];return k?JSON.stringify({key:k,Close:prices[k].Close,C:prices[k].C}):"none";})(),
-      masterCodeSample: masterCache[0]?.Code||"none",
-      priceCodeMatch: masterCache[0]?!!prices[masterCache[0].Code]:"n/a",
-    };
-    console.log("[SCREEN DEBUG]", JSON.stringify(dbg,null,2));
-    setProgress(88,"スクリーニング計算中…",
-      `マスター:${dbg.master} 株価:${dbg.priceKeys}件 対象銘柄:${dbg.codesWithPrice}件 財務キャッシュ:${dbg.finsCached}件`);
+    // 最終確定
+    const finalResults=calcScreenResults(allCodes,prices,filters);
+    showScreenResults(finalResults,date,"");
+    screeningDate=date; screeningPrices=prices;
+    console.log("[SCREEN] 完了 結果:",finalResults.length,"件");
 
-    // 4. 計算＋フィルタ
-    setProgress(90,"スクリーニング計算中…","");
-    const infoMap={};masterCache.forEach(s=>infoMap[s.Code]=s);
-    const results=[];
-    // フィルタ内訳カウント
-    let _cnt={noFins:0,noFyBps:0,noPrice:0,noBpsTaShares:0,alphaNull:0,alphaRange:0,eqFilter:0,roaFilter:0,vtFilter:0,passed:0};
-
-    for(const code of codes){
-      const rawStmts=finsCache[code];
-      if(!rawStmts||!rawStmts.length){_cnt.noFins++;continue;}
-
-      const fyRecs=rawStmts.filter(s=>s.CurPerType==="FY"&&parseFloat(s.BPS||0)>0);
-      const stmt=fyRecs.length?fyRecs[fyRecs.length-1]:rawStmts[rawStmts.length-1];
-      if(!stmt){_cnt.noFyBps++;continue;}
-
-      const pq=prices[code];
-      const price=safe(pq.C||pq.Close||pq.AdjustmentClose);
-      if(price<=0){_cnt.noPrice++;continue;}
-
-      const bps   =safe(stmt.BPS);
-      const ta    =safe(stmt.TA||stmt.TotalAssets);
-      const eq    =safe(stmt.EqAR||stmt.EquityToAssetRatio);
-      const latestRec=rawStmts[rawStmts.length-1]||{};
-      const fOp   =safe(latestRec.FOdP||latestRec.FOP||stmt.NxFOdP||stmt.NxFOP||latestRec.ForecastOperatingProfit);
-      const op    =safe(stmt.OdP||stmt.OP||stmt.OperatingProfit);
-      const shares=safe(stmt.ShOutFY||latestRec.ShOutFY||stmt.NumberOfSharesIssued);
-      if(bps<=0||ta<=0||shares<=0){_cnt.noBpsTaShares++;continue;}
-
-      // EqARが%単位(例:35.5)で来る場合は小数に変換
-      const eqNorm=eq>1?eq/100:eq;
-      const fEps=fOp>0?fOp*.7/shares:0;
-      const roa =op>0?op/ta:0;
-      const pbr =bps>0?price/bps:1;
-
-      // 配当（最新から遡って取得）
-      let div=0;
-      for(let i=rawStmts.length-1;i>=0;i--){
-        const v=safe(rawStmts[i].FDivAnn||rawStmts[i].FDivFY||rawStmts[i].DivAnn||rawStmts[i].NxFDivAnn);
-        if(v>0){div=v;break;}
-      }
-
-      const t=calcTheory(bps,fEps,roa,eqNorm,pbr);
-      const a=calcAlpha(t.theory,price);
-      if(a===null){_cnt.alphaNull++;continue;}
-      if(a<minA||a>maxA){_cnt.alphaRange++;continue;}
-      if(eqNorm*100<minEq){_cnt.eqFilter++;continue;}
-      if(roa*100<minRoa){_cnt.roaFilter++;continue;}
-      const vt=pbr<0.3&&a>100;
-      if(noTrap&&vt){_cnt.vtFilter++;continue;}
-      _cnt.passed++;
-
-      const si=infoMap[code]||{};
-      const lv=levelOf(a);
-      results.push({
-        code, name:si.CoName||"", market:si.MktNm||"", sector:si.S33Nm||"",
-        price, ...t,
-        alpha: Math.round(a*10)/10,
-        level:lv, lcolor:LCOLOR[lv]||"#6b7280",
-        bps:  Math.round(bps),
-        fEps: Math.round(fEps*10)/10,
-        roa:  Math.round(roa*1000)/10,
-        eq:   Math.round(eq*1000)/10,
-        pbr:  Math.round(pbr*100)/100,
-        divYield: div>0&&price>0?Math.round(div/price*10000)/100:0,
-        vt
-      });
-    }
-
-    lastResults=results;
-    setProgress(100,"完了","");
-    loading.classList.add("hidden");
-    meta.classList.remove("hidden");
-    console.log("[SCREEN] フィルタ内訳:", JSON.stringify(_cnt));
-    meta.innerHTML=`<strong>${results.length}銘柄</strong> が条件に一致
-      ／ データ基準日: ${date}
-      <span style="color:var(--amber);font-size:11px;margin-left:6px">※ Freeプラン: 約12週遅延</span>
-      <br><span style="color:#64748b;font-size:10px">
-      [診断] 対象:${dbg.codesWithPrice}件 財務キャッシュ:${dbg.finsCached}件 |
-      財務なし:${_cnt.noFins} 財務不足:${_cnt.noBpsTaShares} α範囲外:${_cnt.alphaRange}
-      自己資本:${_cnt.eqFilter} ROA:${_cnt.roaFilter} 通過:${_cnt.passed}
-      </span>`;
-    screeningDate=date;
-    screeningPrices=prices;
-    renderTable(applySort(results).slice(0,300));
-    table.classList.remove("hidden");
   }catch(e){
     loading.classList.add("hidden");
+    hideSpProgress();
     if(e.name==="AbortError"){
       placeholder.classList.remove("hidden");
       placeholder.textContent="⏹ スクリーニングを中断しました";
+      document.getElementById("results-table").classList.add("hidden");
+      document.getElementById("results-meta").classList.add("hidden");
     }else{
       placeholder.classList.remove("hidden");
       placeholder.textContent="エラー: "+e.message;
@@ -844,7 +722,8 @@ async function runScreen(){
     btn.disabled=false; btn.textContent="スクリーニング実行";
     document.getElementById("abort-btn").classList.add("hidden");
     startBgIfNeeded();
-  }}
+  }
+}
 
 // ══ テーブル描画 ═════════════════════════════════════════════════
 let activeCode=null, chart=null, screeningDate=null, screeningPrices={};
@@ -927,6 +806,7 @@ async function loadDetail(code,screened){
   dc.innerHTML='<div class="loading-wrap" style="padding:40px"><div class="spinner"></div><div class="loading-text">取得中…</div></div>';
   if(chart){chart.destroy();chart=null;}
   try{
+    const myCode=code; // アクティブチェック用
     const info=(masterCache||[]).find(s=>s.Code===code)||{};
 
     // ★ finsCache優先使用（スクリーニングと同一データ保証）
@@ -935,12 +815,14 @@ async function loadDetail(code,screened){
       stmts=finsCache[code];
     }else{
       const fr=await fetch(`${PROXY}/proxy/fins?code=${code}`).then(r=>r.json());
+      if(activeCode!==myCode)return; // 別銘柄が選択された
       stmts=Array.isArray(fr.data)?fr.data:(fr.data?[fr.data]:[]);
       finsCache[code]=stmts;
     }
 
     // 株価履歴はAPIから取得（チャート・最新株価）
     const pr=await fetch(`${PROXY}/proxy/prices?code=${code}`).then(r=>r.json());
+    if(activeCode!==myCode)return; // 別銘柄が選択された
     const quotes=pr.data||[];
 
     // FY決算でBPSがある最新レコード
@@ -975,6 +857,10 @@ async function loadDetail(code,screened){
 
     const pbr =bps>0&&price>0?price/bps:1;
     const t   =calcTheory(bps,fEpsRaw,roaRaw,eq,pbr);
+    // 上限株価: 予測利益なければ実績利益で補完してbvを確保
+    const opForUpper=fOp>0?fOp:op;
+    const fEpsForUpper=opForUpper>0&&shares>0?opForUpper*.7/shares:0;
+    const tDisplay={...t, upper:calcTheory(bps,fEpsForUpper,roaRaw,eq,pbr).upper};
     const a   =calcAlpha(t.theory,price);
     const lv  =levelOf(a);
     const div4=div>0?Math.round(div*25):0;
@@ -982,23 +868,29 @@ async function loadDetail(code,screened){
     // 株価チャート（直近504日≒2年・株式分割調整済み）
     const priceHist=getSplitAdjustedHistory(quotes).slice(-504);
 
-    // 財務履歴（直近8期FY）
+    // 財務履歴（直近8期FY）― 上限株価は実績利益でも補完
     const hist=[];
     fyStmts.slice(-8).forEach(s=>{
       const _bps=safe(s.BPS),_ta=safe(s.TA),_eq=safe(s.EqAR);
+      const _eqN=_eq>1?_eq/100:_eq; // 小数正規化
       const _op=safe(s.OdP||s.OP),_ns=safe(s.Sales),_sh=safe(s.ShOutFY);
-      const _fOp=safe(s.FOdP||s.FOP);
-      const _fEps=_fOp>0&&_sh>0?_fOp*.7/_sh:0;
+      const _fOp=safe(s.FOdP||s.FOP||s.NxFOdP||s.NxFOP);
       const _roa=_op>0&&_ta>0?_op/_ta:0;
-      const _t=calcTheory(_bps,_fEps,_roa,_eq,1);
+      // 理論株価: 予測利益ベース（なければ0）
+      const _fEps =_fOp>0&&_sh>0?_fOp*.7/_sh:0;
+      // 上限株価: 予測なければ実績利益で補完してbvを確保
+      const _opU  =_fOp>0?_fOp:_op;
+      const _fEpsU=_opU>0&&_sh>0?_opU*.7/_sh:0;
+      const _t  =calcTheory(_bps,_fEps, _roa,_eqN,1);
+      const _tU =calcTheory(_bps,_fEpsU,_roa,_eqN,1);
       hist.push({
         period:(s.CurFYEn||"").slice(0,7),
         theory:_t.theory,
-        upper: _t.upper,
+        upper: _tU.upper,
         bps:   Math.round(_bps),
         fEps:  Math.round(_fEps*10)/10,
         roa:   Math.round(_roa*1000)/10,
-        eq:    Math.round(_eq*1000)/10,
+        eq:    Math.round(_eqN*1000)/10,
         sales: Math.round(_ns/1e8*10)/10,
         opProfit:Math.round(_op/1e8*10)/10
       });
@@ -1006,7 +898,7 @@ async function loadDetail(code,screened){
 
     // ★ リストと同一の丸め処理で渡す
     renderDetail({
-      info, code, price, latestPrice, screeningDate, t, a, lv,
+      info, code, price, latestPrice, screeningDate, t:tDisplay, a, lv,
       lcolor:LCOLOR[lv]||"#6b7280",
       bps,
       fEps: Math.round(fEpsRaw*10)/10,
@@ -1193,7 +1085,7 @@ function buildChart(d,mode){
     });
     upperLine=labels.map(dateStr=>{
       const ym=dateStr.slice(0,7);
-      let up=sh[0].upper||d.t.upper;
+      let up=sh[0].upper>sh[0].theory?sh[0].upper:d.t.upper;
       for(const h of sh){if(h.period<=ym)up=h.upper||up;else break;}
       return up;
     });
@@ -1211,16 +1103,29 @@ function buildChart(d,mode){
     theoryLine=theoryLine.map(v=>(v!=null&&v>=yMin&&v<=yMax)?v:null);
     upperLine =upperLine.map(v=>(v!=null&&v>=yMin&&v<=yMax)?v:null);
   }
-  // X軸: 四半期ラベル(yy/mm)のみ表示
+  // X軸: 四半期末の最終営業日1本だけ表示
   const QUARTERS=new Set(['03','06','09','12']);
-  const xTicks={
-    color:"#64748b",font:{size:10},
-    autoSkip:false,maxTicksLimit:100,
-    callback:(val,index)=>{
-      const lbl=labels[index]||'';
+  // 各四半期月のlabels内最後のインデックスを収集
+  const quarterIdxSet=(()=>{
+    const lastOfMonth=new Map();
+    labels.forEach((lbl,i)=>{
       const mm=lbl.slice(5,7);
-      return QUARTERS.has(mm)?(lbl.slice(2,4)+'/'+mm):null;
-    }
+      if(QUARTERS.has(mm))lastOfMonth.set(lbl.slice(0,7),i);
+    });
+    return new Set(lastOfMonth.values());
+  })();
+  const xConfig={
+    afterBuildTicks(scale){
+      scale.ticks=scale.ticks.filter(t=>quarterIdxSet.has(t.value));
+    },
+    ticks:{
+      color:"#64748b",font:{size:10},maxRotation:0,
+      callback(val){
+        const lbl=labels[val]||'';
+        return lbl.slice(2,4)+'/'+lbl.slice(5,7);
+      }
+    },
+    grid:{color:"#1e2535"}
   };
   const datasets=[
     {label:"株価",data:closes,
@@ -1236,7 +1141,7 @@ function buildChart(d,mode){
       spanGaps:false,yAxisID:"y"},
   ];
   const scales={
-    x:{ticks:xTicks,grid:{color:"#1e2535"}},
+    x:xConfig,
     y:{position:"left",min:yMin,max:yMax,
       ticks:{color:"#64748b",font:{size:10},callback:v=>"\u00a5"+v.toLocaleString()},
       grid:{color:"#1e2535"}}
