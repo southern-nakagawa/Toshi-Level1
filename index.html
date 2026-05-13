@@ -169,6 +169,10 @@ function toggleWatch(code,info){
   }
   localStorage.setItem("screener_watchlist",JSON.stringify(watchlist));
   updateWlBadge();
+  // ウォッチリスト表示中なら結果も即時更新
+  const meta=document.getElementById("results-meta");
+  if(meta&&!meta.classList.contains("hidden")&&meta.textContent.includes("ウォッチリスト"))
+    showWatchlistResults();
 }
 
 function updateWlBadge(){
@@ -255,6 +259,7 @@ function showWatchlist(){
       localStorage.setItem("screener_watchlist",JSON.stringify(watchlist));
       updateWlBadge();
       showWatchlist();
+      showWatchlistResults();
     });
   });
 
@@ -284,11 +289,15 @@ function showWatchlist(){
       watchlist.splice(di,0,moved);
       localStorage.setItem("screener_watchlist",JSON.stringify(watchlist));
       showWatchlist();
+      showWatchlistResults();
     });
   });
 }
 
-document.getElementById("watchlist-btn").addEventListener("click",showWatchlist);
+document.getElementById("watchlist-btn").addEventListener("click",()=>{
+  showWatchlist();
+  showWatchlistResults();
+});
 
 // ══ マルチキーソート ═════════════════════════════════════════════
 // sortKeys: [{key, dir}] — 先頭ほど優先
@@ -596,8 +605,82 @@ function showScreenResults(results,date,suffix){
   renderTable(applySort(results).slice(0,300));
 }
 
+// ウォッチリスト → スクリーニングリスト表示
+async function showWatchlistResults(){
+  const meta=document.getElementById("results-meta");
+  const placeholder=document.getElementById("placeholder");
+  const table=document.getElementById("results-table");
+
+  if(!watchlist.length){
+    lastResults=[];
+    table.classList.add("hidden");
+    meta.classList.add("hidden");
+    placeholder.classList.remove("hidden");
+    placeholder.textContent="⭐ ウォッチリストに銘柄が登録されていません";
+    return;
+  }
+  const codes=watchlist.map(w=>w.code);
+
+  // 株価: 既存キャッシュで最新の日付を使用、なければ取得
+  let date=null, prices={};
+  const cached=Object.keys(priceCache).filter(d=>Object.keys(priceCache[d]).length>0);
+  if(cached.length){
+    date=cached.sort().at(-1);
+    prices=priceCache[date];
+  } else {
+    meta.classList.remove("hidden");
+    meta.innerHTML=`<span style="color:var(--muted)">⭐ 株価データ取得中…</span>`;
+    date=latestDate();
+    for(let t=0;t<12;t++){
+      if(!priceCache[date]){
+        try{
+          const r=await fetch(`${PROXY}/proxy/prices?date=${date}`);
+          const d=await r.json();
+          priceCache[date]={};
+          (d.data||[]).forEach(q=>{
+            const c=q.Close||q.C||q.AdjustmentClose;
+            if(c)priceCache[date][q.Code]=q;
+          });
+        }catch{break;}
+      }
+      if(Object.keys(priceCache[date]).length){prices=priceCache[date];break;}
+      const prev=new Date(date+"T12:00:00Z");
+      prev.setDate(prev.getDate()-1);
+      while(prev.getDay()===0||prev.getDay()===6)prev.setDate(prev.getDate()-1);
+      date=prev.toISOString().slice(0,10);
+    }
+  }
+
+  // 未取得の財務データを取得
+  const missing=codes.filter(c=>!finsCache[c]||!finsCache[c].length);
+  if(missing.length){
+    meta.classList.remove("hidden");
+    meta.innerHTML=`<span style="color:var(--muted)">⭐ 財務データ取得中… ${missing.length}件</span>`;
+    for(const code of missing){
+      try{
+        const r=await fetch(`${PROXY}/proxy/fins?code=${code}`);
+        const d=await r.json();
+        finsCache[code]=d.data||[];
+      }catch{}
+    }
+  }
+
+  // フィルタなし（ウォッチリスト全銘柄を表示）
+  const wlFilters={minA:-9999,maxA:9999,minEq:0,minRoa:0,minDiv:0,noTrap:false};
+  const results=calcScreenResults(codes,prices,wlFilters);
+
+  // 結果リスト表示（ウォッチリストモード）
+  lastResults=results;
+  placeholder.classList.add("hidden");
+  table.classList.remove("hidden");
+  meta.classList.remove("hidden");
+  meta.innerHTML=`⭐ <strong>${results.length}銘柄</strong>のウォッチリスト ／ 基準日:${date}
+    <span style="color:var(--amber);font-size:11px;margin-left:4px">※ Freeプラン約12週遅延</span>
+    ${results.length<codes.length?`<span style="color:var(--red);font-size:11px;margin-left:8px">（財務データ未取得: ${codes.length-results.length}件）</span>`:""}`;
+  renderTable(applySort(results).slice(0,300));
+}
+
 async function runScreen(){
-  if(screenAbortCtrl)screenAbortCtrl.abort();
   screenAbortCtrl=new AbortController();
   const sig=screenAbortCtrl.signal;
 
