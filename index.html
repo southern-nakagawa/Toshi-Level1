@@ -85,7 +85,7 @@
         <thead><tr id="results-thead">
           <th class="sortable" data-key="code" data-tip="証券コード（東証の識別番号）" style="text-align:left">コード<span class="sort-ind"></span></th>
           <th data-tip="会社名">銘柄名</th>
-          <th class="sortable" data-key="price" data-tip="基準日の株価&#10;※Freeプランのため約12週前のデータ">株価<span class="sort-ind"></span></th>
+          <th class="sortable" data-key="price" data-tip="株価基準日の終値（J-Quantsの最新利用可能日）">株価<span class="sort-ind"></span></th>
           <th class="sortable" data-key="theory" data-tip="はっしゃん式で算出した理論上の適正株価。&#10;資産価値＋事業価値をリスク係数で調整して計算">理論株価<span class="sort-ind"></span></th>
           <th class="sortable" data-key="alpha" data-tip="割安度（%）。&#10;(理論株価 − 株価) ÷ 株価 × 100%&#10;プラス → 割安　マイナス → 割高">α値<span class="sort-ind"></span></th>
           <th data-tip="割安度の段階。&#10;超割安(α>100%) / 割安(50〜100%) / 準割安(10〜50%)&#10;適正(-10〜10%) / 準割高 / 割高 / 超割高">水準</th>
@@ -148,10 +148,44 @@ let screenAbortCtrl=null;   // スクリーニング中断用
 let currentDetailData=null; // チャートスケール切替用
 let chartScaleMode='all';   // 'all' | 'price'
 
-function latestDate(){
-  let d=new Date();d.setDate(d.getDate()-90);
+// 価格日付ユーティリティ
+function prevTradingDay(dateStr){
+  const d=new Date(dateStr+"T12:00:00Z");
+  d.setDate(d.getDate()-1);
   while(d.getDay()===0||d.getDay()===6)d.setDate(d.getDate()-1);
-  return d.toISOString().slice(0,10)}
+  return d.toISOString().slice(0,10);
+}
+function nextTradingDay(dateStr){
+  const d=new Date(dateStr+"T12:00:00Z");
+  d.setDate(d.getDate()+1);
+  while(d.getDay()===0||d.getDay()===6)d.setDate(d.getDate()+1);
+  return d.toISOString().slice(0,10);
+}
+// 初回検索の開始点（85日前：Freeプランの遅延境界付近）
+function latestDateStart(){
+  let d=new Date();d.setDate(d.getDate()-85);
+  while(d.getDay()===0||d.getDay()===6)d.setDate(d.getDate()-1);
+  return d.toISOString().slice(0,10);}
+// 指定日の株価を取得（400/空は0を返す・AbortErrorは再throw）
+async function fetchPricesForDate(date,sig){
+  if(priceCache[date])return Object.keys(priceCache[date]).length;
+  try{
+    const r=await fetch(`${PROXY}/proxy/prices?date=${date}`,{signal:sig});
+    priceCache[date]={};
+    if(r.ok){
+      const d=await r.json();
+      (d.data||[]).forEach(q=>{
+        const c=q.Close||q.C||q.AdjustmentClose;
+        if(c)priceCache[date][q.Code]=q;
+      });
+    }
+    // 400等はデータなし扱い（throw しない）
+    return Object.keys(priceCache[date]).length;
+  }catch(e){
+    if(e.name==="AbortError")throw e;
+    return 0;
+  }
+}
 
 // ══ ウォッチリスト ═══════════════════════════════════════════════
 let watchlist=JSON.parse(localStorage.getItem("screener_watchlist")||"[]");
@@ -599,8 +633,7 @@ function showScreenResults(results,date,suffix){
   placeholder.classList.add("hidden");
   table.classList.remove("hidden");
   meta.classList.remove("hidden");
-  meta.innerHTML=`<strong>${results.length}銘柄</strong>が条件に一致 ／ 基準日:${date}
-    <span style="color:var(--amber);font-size:11px;margin-left:4px">※ Freeプラン約12週遅延</span>
+  meta.innerHTML=`<strong>${results.length}銘柄</strong>が条件に一致 ／ 株価基準日: <strong>${date}</strong>
     ${suffix?`<span style="color:var(--muted);font-size:11px;margin-left:8px">${suffix}</span>`:""}`;
   renderTable(applySort(results).slice(0,300));
 }
@@ -674,8 +707,7 @@ async function showWatchlistResults(){
   placeholder.classList.add("hidden");
   table.classList.remove("hidden");
   meta.classList.remove("hidden");
-  meta.innerHTML=`⭐ <strong>${results.length}銘柄</strong>のウォッチリスト ／ 基準日:${date}
-    <span style="color:var(--amber);font-size:11px;margin-left:4px">※ Freeプラン約12週遅延</span>
+  meta.innerHTML=`⭐ <strong>${results.length}銘柄</strong>のウォッチリスト ／ 株価基準日: <strong>${date}</strong>
     ${results.length<codes.length?`<span style="color:var(--red);font-size:11px;margin-left:8px">（財務データ未取得: ${codes.length-results.length}件）</span>`:""}`;
   renderTable(applySort(results).slice(0,300));
 }
@@ -718,28 +750,53 @@ async function runScreen(){
     if(filters.market)stocks=stocks.filter(s=>s.MktNm===filters.market);
     if(filters.sector)stocks=stocks.filter(s=>s.S33Nm===filters.sector);
 
-    // 2. 株価（祝日対応：空なら前営業日へ遡る）
-    let date=latestDate();
-    for(let attempt=0;attempt<12;attempt++){
-      if(sig.aborted)throw new DOMException("中断","AbortError");
-      if(!priceCache[date]){
-        loading.classList.remove("hidden");
-        setProgress(30,`株価データ取得中…`,`基準日:${date}${attempt>0?" (前営業日を検索中…)":""}`);
-        const r=await fetch(`${PROXY}/proxy/prices?date=${date}`,{signal:sig});
-        const d=await r.json();
-        if(!r.ok)throw new Error(d.error);
-        priceCache[date]={};
-        (d.data||[]).forEach(q=>{
-          const c=q.Close||q.C||q.AdjustmentClose;
-          if(c)priceCache[date][q.Code]=q;
-        });
+    // 2. 株価：最新利用可能日を効率的に特定
+    //    前回成功日があれば「前進」で最新日を探す（日付変更時の効率化）
+    //    初回は85日前から「後退」検索（Freeプランの遅延境界を探す）
+    setProgress(20,"株価データ確認中…","");
+    let date;
+    const savedDate=localStorage.getItem("screener_last_price_date");
+    const todayStr=new Date().toISOString().slice(0,10);
+
+    if(savedDate&&Object.keys(priceCache[savedDate]||{}).length>0){
+      // キャッシュ済み: 前進して最新日を探す
+      date=savedDate;
+      let tryDate=nextTradingDay(savedDate);
+      while(tryDate<todayStr){
+        if(sig.aborted)throw new DOMException("中断","AbortError");
+        setProgress(25,"株価データ確認中…",`${tryDate} を確認中…`);
+        const cnt=await fetchPricesForDate(tryDate,sig);
+        if(cnt>0){date=tryDate;tryDate=nextTradingDay(tryDate);}
+        else break;
       }
-      if(Object.keys(priceCache[date]).length>0)break;
-      const prev=new Date(date+"T12:00:00Z");
-      prev.setDate(prev.getDate()-1);
-      while(prev.getDay()===0||prev.getDay()===6)prev.setDate(prev.getDate()-1);
-      date=prev.toISOString().slice(0,10);
+    } else if(savedDate){
+      // 日付は知っているがキャッシュなし: その日から取得し前進
+      date=savedDate;
+      setProgress(25,"株価データ取得中…",`前回基準日 ${date} を取得中…`);
+      await fetchPricesForDate(date,sig);
+      let tryDate=nextTradingDay(date);
+      while(tryDate<todayStr){
+        if(sig.aborted)throw new DOMException("中断","AbortError");
+        setProgress(25,"株価データ確認中…",`${tryDate} を確認中…`);
+        const cnt=await fetchPricesForDate(tryDate,sig);
+        if(cnt>0){date=tryDate;tryDate=nextTradingDay(tryDate);}
+        else break;
+      }
+    } else {
+      // 初回: 85日前から後退して最新日を探す
+      date=latestDateStart();
+      for(let attempt=0;attempt<25;attempt++){
+        if(sig.aborted)throw new DOMException("中断","AbortError");
+        setProgress(25,"株価データ取得中…",`${date} を確認中… (${attempt+1}日目)`);
+        const cnt=await fetchPricesForDate(date,sig);
+        if(cnt>0)break;
+        date=prevTradingDay(date);
+      }
     }
+    // 最新利用可能日を保存
+    if(Object.keys(priceCache[date]||{}).length>0)
+      localStorage.setItem("screener_last_price_date",date);
+    setProgress(30,"株価データ完了",`最新株価日: ${date}`);
     loading.classList.add("hidden");
     const prices=priceCache[date];
     const allCodes=stocks.map(s=>s.Code).filter(c=>prices[c]);
@@ -1107,7 +1164,7 @@ function renderDetail(d){
     </div>
     <div class="bar-wrap"><h4>株価水準イメージ</h4>
       <div class="bar-row">
-        <span class="bar-lbl" style="color:var(--muted)" data-tip="基準日の株価（Freeプランのため約12週前）">株価</span>
+        <span class="bar-lbl" style="color:var(--muted)" data-tip="J-Quantsの最新利用可能日の終値">株価</span>
         <div class="bar-bg"><div class="bar-fill" style="width:${pct(d.price)}%;background:var(--accent)"></div></div>
         <span class="bar-val" style="color:var(--accent)">¥${fmtPrice(d.price)}</span>
       </div>
