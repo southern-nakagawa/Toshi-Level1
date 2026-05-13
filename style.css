@@ -195,3 +195,17 @@ td:nth-child(2){max-width:150px;overflow:hidden;text-overflow:ellipsis}
 .wl-item{display:flex;align-items:center;justify-content:space-between;
   padding:10px 16px;border-bottom:1px solid var(--border)}
 .wl-item:hover{background:#1a2035}
+
+/* ── ツールチップ ─────────────────────────────────────── */
+#tooltip{
+  position:fixed;z-index:99999;
+  background:#1a2640;color:#dde3f0;
+  font-size:12px;line-height:1.65;
+  padding:8px 12px;border-radius:8px;
+  border:1px solid #2d4060;
+  max-width:260px;white-space:pre-line;
+  pointer-events:none;opacity:0;
+  transition:opacity .12s ease;
+  box-shadow:0 6px 20px rgba(0,0,0,.55);
+}
+#tooltip.vis{opacity:1;}

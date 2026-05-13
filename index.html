@@ -34,7 +34,7 @@
     <h1>📊 理論株価スクリーナー <span style="font-size:11px;color:var(--muted);font-weight:400">J-Quants V2</span></h1>
     <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
       <span id="bg-status"></span>
-      <label class="bg-label">
+      <label class="bg-label" data-tip="バックグラウンドで財務データを自動収集します。&#10;スクリーニング実行時の待ち時間を短縮できます">
         <input type="checkbox" id="bg-toggle"> BG収集
       </label>
       <button class="btn-sm" id="watchlist-btn">⭐ <span id="wl-badge" class="wl-badge hidden">0</span> ウォッチリスト</button>
@@ -44,21 +44,21 @@
   </header>
 
   <div class="filter-panel">
-    <div class="fg"><label>市場</label>
+    <div class="fg" data-tip="東証プライム・スタンダード・グロースなど、市場で銘柄を絞り込みます"><label>市場</label>
       <select id="f-market"><option value="">すべて</option></select></div>
-    <div class="fg"><label>業種（33業種）</label>
+    <div class="fg" data-tip="東証33業種分類で絞り込みます。例：食料品、電気機器、銀行業など"><label>業種（33業種）</label>
       <select id="f-sector"><option value="">すべて</option></select></div>
-    <div class="fg"><label>α値 下限(%)</label>
+    <div class="fg" data-tip="α値の下限（%）。&#10;α値 = (理論株価 − 株価) ÷ 株価 × 100%&#10;10なら「理論より10%以上割安」な銘柄だけ表示"><label>α値 下限(%)</label>
       <input type="number" id="f-mina" value="10" style="width:80px"></div>
-    <div class="fg"><label>α値 上限(%)</label>
+    <div class="fg" data-tip="α値の上限（%）。&#10;数値が大きすぎる銘柄はデータ異常や業績悪化の可能性があるため上限で除外できます"><label>α値 上限(%)</label>
       <input type="number" id="f-maxa" value="200" style="width:80px"></div>
-    <div class="fg"><label>自己資本比率 下限(%)</label>
+    <div class="fg" data-tip="自己資本比率の下限（%）。&#10;総資産に占める自己資本の割合。&#10;高いほど財務が安全。一般的に30%以上が目安"><label>自己資本比率 下限(%)</label>
       <input type="number" id="f-eq" value="30" style="width:80px"></div>
-    <div class="fg"><label>ROA 下限(%)</label>
+    <div class="fg" data-tip="ROA（総資産利益率）の下限（%）。&#10;経常利益 ÷ 総資産 × 100%。&#10;高いほど資産を効率よく利益に変えている証拠。3〜5%以上が優良企業の目安"><label>ROA 下限(%)</label>
       <input type="number" id="f-roa" value="0" style="width:80px"></div>
-    <div class="fg"><label>配当利回り 下限(%)</label>
+    <div class="fg" data-tip="配当利回りの下限（%）。&#10;年間配当 ÷ 株価 × 100%。&#10;0にすると無配当銘柄も含めます。3%以上が一般的に高配当の目安"><label>配当利回り 下限(%)</label>
       <input type="number" id="f-div" value="0" step="0.1" style="width:80px"></div>
-    <div class="fg chk">
+    <div class="fg chk" data-tip="バリュートラップ候補を除外します。&#10;PBR＜0.3 かつ α値＞100% の銘柄は&#10;市場が割安と見なさない理由がある可能性があります（業績悪化・倒産リスク等）">
       <input type="checkbox" id="f-notrap" checked>
       <label for="f-notrap">バリュートラップ除外</label></div>
     <button class="btn-screen" id="screen-btn">スクリーニング実行</button>
@@ -83,22 +83,22 @@
         <span style="font-size:11px;margin-top:8px;display:block">⏱ Freeプランは初回取得に15〜30分かかります。業種・市場で絞り込むと短縮できます。</span></div>
       <table id="results-table" class="hidden">
         <thead><tr id="results-thead">
-          <th class="sortable" data-key="code" style="text-align:left">コード<span class="sort-ind"></span></th>
-          <th>銘柄名</th>
-          <th class="sortable" data-key="price">株価<span class="sort-ind"></span></th>
-          <th class="sortable" data-key="theory">理論株価<span class="sort-ind"></span></th>
-          <th class="sortable" data-key="alpha">α値<span class="sort-ind"></span></th>
-          <th>水準</th>
-          <th class="sortable" data-key="upper">上限株価<span class="sort-ind"></span></th>
-          <th class="sortable" data-key="asset">資産価値<span class="sort-ind"></span></th>
-          <th class="sortable" data-key="business">事業価値<span class="sort-ind"></span></th>
-          <th class="sortable" data-key="bps">BPS<span class="sort-ind"></span></th>
-          <th class="sortable" data-key="fEps">予想EPS<span class="sort-ind"></span></th>
-          <th class="sortable" data-key="roa">ROA%<span class="sort-ind"></span></th>
-          <th class="sortable" data-key="eq">自己資本比率%<span class="sort-ind"></span></th>
-          <th class="sortable" data-key="pbr">PBR<span class="sort-ind"></span></th>
-          <th class="sortable" data-key="divYield">配当利回り%<span class="sort-ind"></span></th>
-          <th>業種</th>
+          <th class="sortable" data-key="code" data-tip="証券コード（東証の識別番号）" style="text-align:left">コード<span class="sort-ind"></span></th>
+          <th data-tip="会社名">銘柄名</th>
+          <th class="sortable" data-key="price" data-tip="基準日の株価&#10;※Freeプランのため約12週前のデータ">株価<span class="sort-ind"></span></th>
+          <th class="sortable" data-key="theory" data-tip="はっしゃん式で算出した理論上の適正株価。&#10;資産価値＋事業価値をリスク係数で調整して計算">理論株価<span class="sort-ind"></span></th>
+          <th class="sortable" data-key="alpha" data-tip="割安度（%）。&#10;(理論株価 − 株価) ÷ 株価 × 100%&#10;プラス → 割安　マイナス → 割高">α値<span class="sort-ind"></span></th>
+          <th data-tip="割安度の段階。&#10;超割安(α>100%) / 割安(50〜100%) / 準割安(10〜50%)&#10;適正(-10〜10%) / 準割高 / 割高 / 超割高">水準</th>
+          <th class="sortable" data-key="upper" data-tip="事業価値を実績利益ベースで最大評価した上限価格。&#10;理論株価より楽観的なシナリオの目標値として参考にします">上限株価<span class="sort-ind"></span></th>
+          <th class="sortable" data-key="asset" data-tip="純資産（BPS）を自己資本比率で評価した価値。&#10;会社を解散したときの理論上の受け取り額に相当">資産価値<span class="sort-ind"></span></th>
+          <th class="sortable" data-key="business" data-tip="収益力から算出したビジネス価値。&#10;予想EPS × 15 × ROA × レバレッジで計算。&#10;利益を生む力が高いほど大きくなります">事業価値<span class="sort-ind"></span></th>
+          <th class="sortable" data-key="bps" data-tip="一株あたり純資産（Book value Per Share）。&#10;会社を解散したとき1株に割り当てられる理論上の金額">BPS<span class="sort-ind"></span></th>
+          <th class="sortable" data-key="fEps" data-tip="はっしゃん式の予想EPS（一株あたり利益）。&#10;予想経常利益 × 70% ÷ 発行株数で計算&#10;（70%は税引き後の概算）">予想EPS<span class="sort-ind"></span></th>
+          <th class="sortable" data-key="roa" data-tip="総資産利益率（Return On Assets）（%）。&#10;経常利益 ÷ 総資産 × 100%。&#10;高いほど資産を効率よく使えている。5%以上が優良目安">ROA%<span class="sort-ind"></span></th>
+          <th class="sortable" data-key="eq" data-tip="総資産に占める自己資本の割合（%）。&#10;高いほど借金が少なく財務が安全。&#10;50%以上：優良　30%未満：要注意">自己資本比率%<span class="sort-ind"></span></th>
+          <th class="sortable" data-key="pbr" data-tip="株価純資産倍率（Price Book-value Ratio）。&#10;株価 ÷ BPS。&#10;1倍未満 → 解散価値より安く買える状態">PBR<span class="sort-ind"></span></th>
+          <th class="sortable" data-key="divYield" data-tip="配当利回り（%）。&#10;年間配当 ÷ 株価 × 100%。&#10;3%以上が一般的に高配当とされる">配当利回り%<span class="sort-ind"></span></th>
+          <th data-tip="東証33業種分類">業種</th>
         </tr></thead>
         <tbody id="results-tbody"></tbody>
       </table>
@@ -769,31 +769,64 @@ function closeDetail(){
 }
 
 // ══ 株式分割調整 ════════════════════════════════════════════════
-// J-Quants V2: AdjustmentClose があれば直接使用、なければ AdjustmentFactor で逆算
+// J-Quants V2: 株式分割調整済み株価履歴を返す
+// 優先順: ①AdjustmentClose ②AdjustmentFactor×Close ③価格変動から分割を自動検出
 function getSplitAdjustedHistory(quotes){
   if(!quotes.length)return[];
-  const sample=quotes[quotes.length-1];
-  // AdjustmentClose フィールドがある場合はそちらを優先
-  if(sample.AdjustmentClose!==undefined||sample.AdjClose!==undefined){
+
+  // ① AdjustmentClose が有効な場合（最も信頼できる）
+  const sampleAC=parseFloat(quotes[quotes.length-1].AdjustmentClose);
+  if(sampleAC>0){
+    const r=quotes.map(q=>({
+      date:(q.Date||"").slice(0,10),
+      close:parseFloat(q.AdjustmentClose)||0
+    })).filter(p=>p.close>0);
+    if(r.length)return r;
+  }
+
+  // ② AdjustmentFactor が実質的に機能している場合（1以外の値が存在）
+  //    J-Quants の AdjustmentFactor は累積係数: AdjClose = Close × Factor
+  const hasRealFactor=quotes.some(q=>{
+    const f=parseFloat(q.AdjustmentFactor);
+    return f>0&&Math.abs(f-1)>0.001;
+  });
+  if(hasRealFactor){
     return quotes.map(q=>({
       date:(q.Date||"").slice(0,10),
-      close:parseFloat(q.AdjustmentClose??q.AdjClose??q.C??q.Close??0)
+      close:Math.round(parseFloat(q.Close||q.C||0)*(parseFloat(q.AdjustmentFactor)||1)*10)/10
     })).filter(p=>p.close>0);
   }
-  // フォールバック: AdjustmentFactor を使って最新日基準に逆算
-  // 最新日から過去へ遡り、分割日の係数を累積して掛け合わせる
-  const n=quotes.length;
-  const adjClose=new Array(n);
-  let cumAdj=1.0;
-  for(let i=n-1;i>=0;i--){
-    const c=parseFloat(quotes[i].C??quotes[i].Close??0);
-    adjClose[i]=c*cumAdj;
-    const af=parseFloat(quotes[i].AdjustmentFactor??1);
-    if(af>0&&af!==1)cumAdj*=af; // 過去に向かって分割係数を累積
+
+  // ③ フォールバック: 終値の大幅変動から株式分割を自動検出・逆算
+  //    最新日基準（現在の単元株価）に統一する
+  const closes=quotes.map(q=>parseFloat(q.Close||q.C||0));
+  const n=closes.length;
+  const adjusted=new Array(n);
+  adjusted[n-1]=closes[n-1]; // 最新日はそのまま
+
+  let cumDiv=1; // 最新日から遡るにつれ累積する除数
+  for(let i=n-1;i>0;i--){
+    const prev=closes[i-1], cur=closes[i];
+    if(cur>0&&prev>0){
+      const ratio=prev/cur;
+      // 1日で1.8倍以上の変化 → 株式分割と判断
+      if(ratio>=1.8){
+        // 最も近い整数比を分割比として採用（2,3,4,5,10など）
+        const candidates=[2,3,4,5,10];
+        const best=candidates.reduce((a,b)=>Math.abs(ratio-a)<Math.abs(ratio-b)?a:b);
+        cumDiv*=best;
+      }
+      // 逆分割（1:2など）: 0.45以下 → 逆方向に補正
+      else if(ratio<=0.45&&ratio>0){
+        const best=[2,3,4].reduce((a,b)=>Math.abs(1/ratio-a)<Math.abs(1/ratio-b)?a:b);
+        cumDiv/=best;
+      }
+    }
+    adjusted[i-1]=Math.round(closes[i-1]/cumDiv*10)/10;
   }
   return quotes.map((q,i)=>({
     date:(q.Date||"").slice(0,10),
-    close:Math.round(adjClose[i]*100)/100
+    close:adjusted[i]
   })).filter(p=>p.close>0);
 }
 
@@ -991,22 +1024,22 @@ function renderDetail(d){
     </div>
     <div class="bar-wrap"><h4>株価水準イメージ</h4>
       <div class="bar-row">
-        <span class="bar-lbl" style="color:var(--muted)">株価</span>
+        <span class="bar-lbl" style="color:var(--muted)" data-tip="基準日の株価（Freeプランのため約12週前）">株価</span>
         <div class="bar-bg"><div class="bar-fill" style="width:${pct(d.price)}%;background:var(--accent)"></div></div>
         <span class="bar-val" style="color:var(--accent)">¥${fmtPrice(d.price)}</span>
       </div>
       <div class="bar-row">
-        <span class="bar-lbl" style="color:var(--gold)">理論株価</span>
+        <span class="bar-lbl" style="color:var(--gold)" data-tip="はっしゃん式による理論上の適正株価。&#10;資産価値＋事業価値をリスク係数で調整して計算">理論株価</span>
         <div class="bar-bg"><div class="bar-fill" style="width:${pct(d.t.theory)}%;background:var(--gold)"></div></div>
         <span class="bar-val" style="color:var(--gold)">¥${fmtPrice(d.t.theory)}</span>
       </div>
       <div class="bar-row">
-        <span class="bar-lbl" style="color:var(--amber)">上限株価</span>
+        <span class="bar-lbl" style="color:var(--amber)" data-tip="実績利益ベースで事業価値を最大評価した上限価格。&#10;楽観的シナリオの目標値として参考にします">上限株価</span>
         <div class="bar-bg"><div class="bar-fill" style="width:${pct(d.t.upper)}%;background:var(--amber)"></div></div>
         <span class="bar-val" style="color:var(--amber)">¥${fmtPrice(d.t.upper)}</span>
       </div>
       ${d.div4>0?`<div class="bar-row">
-        <span class="bar-lbl" style="color:var(--accent)">配当4%</span>
+        <span class="bar-lbl" style="color:var(--accent)" data-tip="配当利回りが4%になる株価。&#10;この価格以下で買うと配当利回り4%以上になります">配当4%</span>
         <div class="bar-bg"><div class="bar-fill" style="width:${pct(d.div4)}%;background:var(--accent)"></div></div>
         <span class="bar-val" style="color:var(--accent)">¥${fmtPrice(d.div4)}</span>
       </div>`:""}
@@ -1172,7 +1205,48 @@ function buildChart(d,mode){
       },
       scales
     }});
-}// ── 詳細ペイン幅リサイズ ─────────────────────────────────────
+}// ── ツールチップエンジン ─────────────────────────────────
+(function(){
+  const tip=document.createElement("div");
+  tip.id="tooltip";
+  document.body.appendChild(tip);
+  let cur=null;
+
+  function show(el,e){
+    tip.textContent=el.dataset.tip;
+    tip.classList.add("vis");
+    move(e);
+  }
+  function hide(){tip.classList.remove("vis");cur=null;}
+  function move(e){
+    const tw=tip.offsetWidth||220,th=tip.offsetHeight||50;
+    const vw=window.innerWidth,vh=window.innerHeight;
+    let x=e.clientX+14,y=e.clientY-10;
+    if(x+tw>vw-8)x=e.clientX-tw-14;
+    if(y+th>vh-8)y=vh-th-8;
+    if(y<8)y=8;
+    tip.style.left=x+"px";tip.style.top=y+"px";
+  }
+
+  document.addEventListener("mouseover",e=>{
+    const el=e.target.closest("[data-tip]");
+    if(!el||el===cur)return;
+    cur=el;show(el,e);
+  });
+  document.addEventListener("mousemove",e=>{
+    if(cur)move(e);
+  });
+  document.addEventListener("mouseout",e=>{
+    if(!cur)return;
+    const to=e.relatedTarget;
+    if(to&&to.closest("[data-tip]")===cur)return;
+    hide();
+  });
+  // スクロール・クリックで消す
+  document.addEventListener("scroll",hide,true);
+  document.addEventListener("click",hide,true);
+})();
+
 (function(){
   const resizer=document.getElementById("pane-resizer");
   const detail=document.getElementById("detail-pane");
