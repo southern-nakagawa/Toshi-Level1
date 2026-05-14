@@ -1036,10 +1036,13 @@ async function loadDetail(code,screened){
       const _op=safe(s.OdP||s.OP),_ns=safe(s.Sales),_sh=safe(s.ShOutFY);
       const _fOp=safe(s.FOdP||s.FOP||s.NxFOdP||s.NxFOP);
       const _roa=_op>0&&_ta>0?_op/_ta:0;
-      // 理論株価: 予測利益ベース（なければ0）
-      const _fEps =_fOp>0&&_sh>0?_fOp*.7/_sh:0;
-      // 上限株価: 予測なければ実績利益で補完してbvを確保
-      const _opU  =_fOp>0?_fOp:_op;
+      // FY年度末レコードはFOdP=0のことが多い（予想期間終了）ため実績OdPで補完
+      // 理論株価・上限株価ともに同一ロジック: 予測 > 0 なら予測、なければ実績
+      const _opEff=_fOp>0?_fOp:_op;
+      const _isFcast=_fOp>0; // 予測ベースかどうか（表示用）
+      const _fEps =_opEff>0&&_sh>0?_opEff*.7/_sh:0;
+      // 上限株価: max(予測, 実績)でさらに楽観的に
+      const _opU  =Math.max(_fOp,_op);
       const _fEpsU=_opU>0&&_sh>0?_opU*.7/_sh:0;
       const _t  =calcTheory(_bps,_fEps, _roa,_eqN,1);
       const _tU =calcTheory(_bps,_fEpsU,_roa,_eqN,1);
@@ -1049,6 +1052,7 @@ async function loadDetail(code,screened){
         upper: _tU.upper,
         bps:   Math.round(_bps),
         fEps:  Math.round(_fEps*10)/10,
+        fEpsNote: _isFcast?"":"実", // 実績利益ベースの場合に表示
         roa:   Math.round(_roa*1000)/10,
         eq:    Math.round(_eqN*1000)/10,
         sales: Math.round(_ns/1e8*10)/10,
@@ -1183,14 +1187,15 @@ function renderDetail(d){
     </div>
     ${d.hist.length?`<div class="hist-wrap"><h4>財務履歴</h4>
       <table class="hist-tbl"><thead><tr>
-        <th>期</th><th>理論株価</th><th>BPS</th><th>予想EPS</th>
+        <th>期</th><th>理論株価</th><th>BPS</th>
+        <th data-tip="予想EPS（はっしゃん式）。&#10;(実)は予想データなし→実績経常利益で代替">予想EPS</th>
         <th>ROA%</th><th>自己資本比率%</th><th>売上(億)</th><th>経常利益(億)</th>
       </tr></thead><tbody>
         ${d.hist.map(h=>`<tr>
           <td>${h.period}</td>
           <td style="color:var(--gold)">¥${fmtPrice(h.theory)}</td>
           <td>${fmtPrice(h.bps)}</td>
-          <td>${fmtEps(h.fEps)}</td>
+          <td>${fmtEps(h.fEps)}${h.fEpsNote?`<span style="color:var(--muted);font-size:9px;margin-left:2px">(実)</span>`:""}</td>
           <td class="${h.roa>=5?"pos":h.roa<2?"neg":""}">${fmtPct1(h.roa)}%</td>
           <td class="${h.eq>=50?"pos":h.eq<30?"neg":""}">${fmtPct1(h.eq)}%</td>
           <td>${h.sales}</td>
