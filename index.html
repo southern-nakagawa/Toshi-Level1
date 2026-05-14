@@ -161,11 +161,34 @@ function nextTradingDay(dateStr){
   while(d.getDay()===0||d.getDay()===6)d.setDate(d.getDate()+1);
   return d.toISOString().slice(0,10);
 }
-// 初回検索の開始点（85日前：Freeプランの遅延境界付近）
-function latestDateStart(){
-  let d=new Date();d.setDate(d.getDate()-85);
-  while(d.getDay()===0||d.getDay()===6)d.setDate(d.getDate()-1);
-  return d.toISOString().slice(0,10);}
+// 真の最新利用可能日を特定する
+// ①トヨタ(72030)の個別履歴から最新日を取得
+// ②その日付でbulk取得を試み、失敗なら前日にフォールバック
+async function detectLatestPriceDate(sig){
+  let probeDate=null;
+  try{
+    const r=await fetch(`${PROXY}/proxy/prices?code=72030`,{signal:sig});
+    if(r.ok){
+      const d=await r.json();
+      const dates=(d.data||[]).map(q=>(q.Date||"").slice(0,10)).filter(Boolean).sort();
+      if(dates.length)probeDate=dates.at(-1);
+    }
+  }catch(e){if(e.name==="AbortError")throw e;}
+
+  // probeがなければ保存日か85日前を使う
+  const savedDate=localStorage.getItem("screener_last_price_date");
+  let startDate=probeDate||savedDate||latestDateStart();
+
+  // startDateからbulkデータを探す（最大5日前まで後退）
+  let bulkDate=startDate;
+  for(let i=0;i<5;i++){
+    if(sig.aborted)throw new DOMException("中断","AbortError");
+    const cnt=await fetchPricesForDate(bulkDate,sig);
+    if(cnt>0)break;
+    bulkDate=prevTradingDay(bulkDate);
+  }
+  return {bulkDate, probeDate: probeDate||bulkDate};
+}
 // 指定日の株価を取得（400/空は0を返す・AbortErrorは再throw）
 async function fetchPricesForDate(date,sig){
   if(priceCache[date])return Object.keys(priceCache[date]).length;
@@ -633,7 +656,11 @@ function showScreenResults(results,date,suffix){
   placeholder.classList.add("hidden");
   table.classList.remove("hidden");
   meta.classList.remove("hidden");
-  meta.innerHTML=`<strong>${results.length}銘柄</strong>が条件に一致 ／ 株価基準日: <strong>${date}</strong>
+  // 表示基準日: probe(個別履歴)の最新日を優先、なければbulk日
+  const displayDate=lastProbeDate||date;
+  const dateSuffix=lastProbeDate&&lastProbeDate!==date
+    ?`<span style="color:#475569;font-size:10px;margin-left:4px">（株価取得: ${date}）</span>`:"";
+  meta.innerHTML=`<strong>${results.length}銘柄</strong>が条件に一致 ／ 株価基準日: <strong>${displayDate}</strong>${dateSuffix}
     ${suffix?`<span style="color:var(--muted);font-size:11px;margin-left:8px">${suffix}</span>`:""}`;
   renderTable(applySort(results).slice(0,300));
 }
@@ -750,53 +777,12 @@ async function runScreen(){
     if(filters.market)stocks=stocks.filter(s=>s.MktNm===filters.market);
     if(filters.sector)stocks=stocks.filter(s=>s.S33Nm===filters.sector);
 
-    // 2. 株価：最新利用可能日を効率的に特定
-    //    前回成功日があれば「前進」で最新日を探す（日付変更時の効率化）
-    //    初回は85日前から「後退」検索（Freeプランの遅延境界を探す）
-    setProgress(20,"株価データ確認中…","");
-    let date;
-    const savedDate=localStorage.getItem("screener_last_price_date");
-    const todayStr=new Date().toISOString().slice(0,10);
-
-    if(savedDate&&Object.keys(priceCache[savedDate]||{}).length>0){
-      // キャッシュ済み: 前進して最新日を探す
-      date=savedDate;
-      let tryDate=nextTradingDay(savedDate);
-      while(tryDate<todayStr){
-        if(sig.aborted)throw new DOMException("中断","AbortError");
-        setProgress(25,"株価データ確認中…",`${tryDate} を確認中…`);
-        const cnt=await fetchPricesForDate(tryDate,sig);
-        if(cnt>0){date=tryDate;tryDate=nextTradingDay(tryDate);}
-        else break;
-      }
-    } else if(savedDate){
-      // 日付は知っているがキャッシュなし: その日から取得し前進
-      date=savedDate;
-      setProgress(25,"株価データ取得中…",`前回基準日 ${date} を取得中…`);
-      await fetchPricesForDate(date,sig);
-      let tryDate=nextTradingDay(date);
-      while(tryDate<todayStr){
-        if(sig.aborted)throw new DOMException("中断","AbortError");
-        setProgress(25,"株価データ確認中…",`${tryDate} を確認中…`);
-        const cnt=await fetchPricesForDate(tryDate,sig);
-        if(cnt>0){date=tryDate;tryDate=nextTradingDay(tryDate);}
-        else break;
-      }
-    } else {
-      // 初回: 85日前から後退して最新日を探す
-      date=latestDateStart();
-      for(let attempt=0;attempt<25;attempt++){
-        if(sig.aborted)throw new DOMException("中断","AbortError");
-        setProgress(25,"株価データ取得中…",`${date} を確認中… (${attempt+1}日目)`);
-        const cnt=await fetchPricesForDate(date,sig);
-        if(cnt>0)break;
-        date=prevTradingDay(date);
-      }
-    }
-    // 最新利用可能日を保存
-    if(Object.keys(priceCache[date]||{}).length>0)
-      localStorage.setItem("screener_last_price_date",date);
-    setProgress(30,"株価データ完了",`最新株価日: ${date}`);
+    // 2. 株価：probe銘柄(トヨタ)の個別履歴で真の最新日を確定→bulk取得
+    setProgress(20,"最新株価日を確認中…","(基準日を特定中)");
+    const {bulkDate,probeDate}=await detectLatestPriceDate(sig);
+    const date=bulkDate;
+    lastProbeDate=probeDate;
+    localStorage.setItem("screener_last_price_date",date);
     loading.classList.add("hidden");
     const prices=priceCache[date];
     const allCodes=stocks.map(s=>s.Code).filter(c=>prices[c]);
@@ -867,6 +853,7 @@ async function runScreen(){
 
 // ══ テーブル描画 ═════════════════════════════════════════════════
 let activeCode=null, chart=null, screeningDate=null, screeningPrices={};
+let lastProbeDate=null; // 個別履歴から確認した真の最新日
 
 function renderTable(rows){
   const tbody=document.getElementById("results-tbody");
