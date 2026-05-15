@@ -597,8 +597,9 @@ function calcScreenResults(codes,prices,filters){
   for(const code of codes){
     const rawStmts=finsCache[code];
     if(!rawStmts||!rawStmts.length)continue;
-    const fyRecs=rawStmts.filter(s=>s.CurPerType==="FY"&&parseFloat(s.BPS||0)>0);
-    const stmt=fyRecs.length?fyRecs[fyRecs.length-1]:rawStmts[rawStmts.length-1];
+    // ★ 最新レコード（四半期含む・BPS有）で統一
+    const validStmts=rawStmts.filter(s=>parseFloat(s.BPS||0)>0);
+    const stmt=validStmts.length?validStmts[validStmts.length-1]:null;
     if(!stmt)continue;
     const pq=prices[code];if(!pq)continue;
     const price=safe(pq.Close||pq.C||pq.AdjustmentClose);
@@ -606,14 +607,21 @@ function calcScreenResults(codes,prices,filters){
     const bps   =safe(stmt.BPS);
     const ta    =safe(stmt.TA||stmt.TotalAssets);
     const eq    =safe(stmt.EqAR||stmt.EquityToAssetRatio);
-    const latestRec=rawStmts[rawStmts.length-1]||{};
-    const fOp   =safe(latestRec.FOdP||latestRec.FOP||stmt.NxFOdP||stmt.NxFOP);
     const op    =safe(stmt.OdP||stmt.OP||stmt.OperatingProfit);
-    const shares=safe(stmt.ShOutFY||latestRec.ShOutFY||stmt.NumberOfSharesIssued);
+    const shares=safe(stmt.ShOutFY||stmt.NumberOfSharesIssued);
     if(bps<=0||ta<=0||shares<=0)continue;
+    // 四半期は経常利益を年率換算
+    const qNS={'1Q':1,'2Q':2,'3Q':3,'FY':4}[stmt.CurPerType]||4;
+    const annOp=qNS<4?op*(4/qNS):op;
+    // 予想fOp: 最新から遡って取得
+    let fOp=0;
+    for(let i=rawStmts.length-1;i>=0;i--){
+      const v=safe(rawStmts[i].FOdP||rawStmts[i].FOP||rawStmts[i].NxFOdP||rawStmts[i].NxFOP);
+      if(v>0){fOp=v;break;}
+    }
     const eqNorm=eq>1?eq/100:eq;
-    const fEps=fOp>0?fOp*.7/shares:0;
-    const roa =op>0?op/ta:0;
+    const fEps=fOp>0?fOp*.7/shares:(annOp>0?annOp*.7/shares:0);
+    const roa =annOp>0?annOp/ta:0;
     const pbr =bps>0?price/bps:1;
     let div=0;
     for(let i=rawStmts.length-1;i>=0;i--){
@@ -985,9 +993,9 @@ async function loadDetail(code,screened){
     if(activeCode!==myCode)return; // 別銘柄が選択された
     const quotes=pr.data||[];
 
-    // FY決算でBPSがある最新レコード
-    const fyStmts=stmts.filter(s=>s.CurPerType==="FY"&&parseFloat(s.BPS||0)>0);
-    const ls=fyStmts.length?fyStmts[fyStmts.length-1]:(stmts.length?stmts[stmts.length-1]:{});
+    // ★ 最新レコード（四半期含む・BPS有）で統一
+    const validStmtsD=stmts.filter(s=>parseFloat(s.BPS||0)>0);
+    const ls=validStmtsD.length?validStmtsD[validStmtsD.length-1]:(stmts.length?stmts[stmts.length-1]:{});
 
     // 予想経常利益: 最新から遡って取得
     let fOp=0;
@@ -1007,8 +1015,11 @@ async function loadDetail(code,screened){
     const eq    =safe(ls.EqAR);
     const op    =safe(ls.OdP||ls.OP);
     const shares=safe(ls.ShOutFY);
-    const fEpsRaw=fOp>0&&shares>0?fOp*.7/shares:0;
-    const roaRaw =op>0&&ta>0?op/ta:0;
+    // 四半期は年率換算
+    const qNumD={'1Q':1,'2Q':2,'3Q':3,'FY':4}[ls.CurPerType]||4;
+    const annOpD=qNumD<4?op*(4/qNumD):op;
+    const fEpsRaw=fOp>0&&shares>0?fOp*.7/shares:(annOpD>0&&shares>0?annOpD*.7/shares:0);
+    const roaRaw =annOpD>0&&ta>0?annOpD/ta:0;
 
     // スクリーニング基準日価格を優先
     const latestQ =quotes.length?quotes[quotes.length-1]:{};
@@ -1018,7 +1029,7 @@ async function loadDetail(code,screened){
     const pbr =bps>0&&price>0?price/bps:1;
     const t   =calcTheory(bps,fEpsRaw,roaRaw,eq,pbr);
     // 上限株価: 予測利益なければ実績利益で補完してbvを確保
-    const opForUpper=fOp>0?fOp:op;
+    const opForUpper=fOp>0?fOp:annOpD;
     const fEpsForUpper=opForUpper>0&&shares>0?opForUpper*.7/shares:0;
     const tDisplay={...t, upper:calcTheory(bps,fEpsForUpper,roaRaw,eq,pbr).upper};
     const a   =calcAlpha(t.theory,price);
@@ -1028,37 +1039,123 @@ async function loadDetail(code,screened){
     // 株価チャート（直近504日≒2年・株式分割調整済み）
     const priceHist=getSplitAdjustedHistory(quotes).slice(-504);
 
-    // 財務履歴（直近8期FY）― 上限株価は実績利益でも補完
-    const hist=[];
-    fyStmts.slice(-8).forEach(s=>{
+    // ── 株式分割イベントを検出 ────────────────────────────────
+    // 調整済み株価と元の終値を比較し、係数が急変する日を「分割日」として特定
+    // 分割より前の期の財務データ（BPS・EPS・理論株価）を同じ係数で割り、
+    // チャートの株価スケールと一致させる
+    const quoteByDate={};
+    quotes.forEach(q=>quoteByDate[(q.Date||"").slice(0,10)]=q);
+
+    const splitEvents=[]; // {date:string, factor:number}
+    const sortedPH=priceHist.slice().sort((a,b)=>a.date.localeCompare(b.date));
+    for(let i=1;i<sortedPH.length;i++){
+      const cur=sortedPH[i], prev=sortedPH[i-1];
+      const curOrig =parseFloat((quoteByDate[cur.date] ||{}).Close||(quoteByDate[cur.date] ||{}).C||0);
+      const prevOrig=parseFloat((quoteByDate[prev.date]||{}).Close||(quoteByDate[prev.date]||{}).C||0);
+      if(curOrig>0&&prevOrig>0&&cur.close>0&&prev.close>0){
+        const curF =curOrig /cur.close;  // 現在のscale係数
+        const prevF=prevOrig/prev.close; // 前日のscale係数
+        // prevF→curFが大幅に減少 → 分割発生
+        if(prevF>1.05&&curF<1.05&&prevF/curF>1.5){
+          const f=Math.round(prevF);
+          if(f>=2)splitEvents.push({date:cur.date,factor:f});
+        }
+      }
+    }
+
+    // 期末日Pに対して、Pより後に発生した分割の累積係数を返す
+    // （P時点のデータは「旧株数」ベースのため、その後の分割分だけ割る必要がある）
+    function getCumSplitFactor(pDate){
+      let cum=1;
+      splitEvents.forEach(ev=>{if(ev.date>pDate)cum*=ev.factor;});
+      return cum;
+    }
+
+    // 財務履歴（FY直近8期 ＋ 直近四半期 1Q/2Q/3Q）
+    // 四半期は予想FOdPベース、FYは実績フォールバック
+    const qNumMap={'1Q':1,'2Q':2,'3Q':3,'FY':4};
+    function approxPeriodEnd(s){
+      // CurFYEnから四半期分だけ戻した「期末日」を算出
+      const fy=new Date((s.CurFYEn||"2000-01-01")+"T00:00:00Z");
+      const q=qNumMap[s.CurPerType]||4;
+      fy.setMonth(fy.getMonth()-(4-q)*3);
+      return fy;
+    }
+    // DisclosureDateがあればそちらを有効日として使う（四半期の開示ラグに対応）
+    function effectiveDate(s){
+      const disc=(s.DisclosureDate||"").slice(0,10);
+      if(disc>="2000-01-01") return disc;
+      return approxPeriodEnd(s).toISOString().slice(0,10);
+    }
+    const allBps=stmts.filter(s=>parseFloat(s.BPS||0)>0);
+    const fyRecs=allBps.filter(s=>s.CurPerType==="FY").slice(-8);
+    const qRecs =allBps.filter(s=>['1Q','2Q','3Q'].includes(s.CurPerType)).slice(-6);
+    const histRecs=[...fyRecs,...qRecs].sort((a,b)=>approxPeriodEnd(a)-approxPeriodEnd(b));
+    // チャート用: 全期間のBPSレコードを使用（表示制限なし）
+    const chartHistRecs=[...allBps].sort((a,b)=>approxPeriodEnd(a)-approxPeriodEnd(b));
+
+    function buildHistArray(recs){
+    const out=[];
+    recs.forEach(s=>{
       const _bps=safe(s.BPS),_ta=safe(s.TA),_eq=safe(s.EqAR);
-      const _eqN=_eq>1?_eq/100:_eq; // 小数正規化
+      const _eqN=_eq>1?_eq/100:_eq;
       const _op=safe(s.OdP||s.OP),_ns=safe(s.Sales),_sh=safe(s.ShOutFY);
       const _fOp=safe(s.FOdP||s.FOP||s.NxFOdP||s.NxFOP);
-      const _roa=_op>0&&_ta>0?_op/_ta:0;
-      // FY年度末レコードはFOdP=0のことが多い（予想期間終了）ため実績OdPで補完
-      // 理論株価・上限株価ともに同一ロジック: 予測 > 0 なら予測、なければ実績
-      const _opEff=_fOp>0?_fOp:_op;
-      const _isFcast=_fOp>0; // 予測ベースかどうか（表示用）
-      const _fEps =_opEff>0&&_sh>0?_opEff*.7/_sh:0;
-      // 上限株価: max(予測, 実績)でさらに楽観的に
-      const _opU  =Math.max(_fOp,_op);
+      const isFY=s.CurPerType==="FY";
+      const qNum=qNumMap[s.CurPerType]||4;
+
+      // ROA：四半期は累計実績を年率換算
+      const _annualOp=qNum<4?_op*(4/qNum):_op;
+      const _roa=_annualOp>0&&_ta>0?_annualOp/_ta:0;
+
+      // EPS計算用の利益額
+      // FY: FOdP>0→予測、なければ実績OdP
+      // 四半期: FOdP（当期年間予想）>0→予測、なければ年率換算実績
+      const _fOpEff=isFY?(_fOp>0?_fOp:_op):(_fOp>0?_fOp:_annualOp);
+      const _isFcast=_fOp>0;
+      const _fEps =_fOpEff>0&&_sh>0?_fOpEff*.7/_sh:0;
+      const _opU  =Math.max(_fOp,isFY?_op:_annualOp);
       const _fEpsU=_opU>0&&_sh>0?_opU*.7/_sh:0;
-      const _t  =calcTheory(_bps,_fEps, _roa,_eqN,1);
-      const _tU =calcTheory(_bps,_fEpsU,_roa,_eqN,1);
-      hist.push({
-        period:(s.CurFYEn||"").slice(0,7),
-        theory:_t.theory,
-        upper: _tU.upper,
-        bps:   Math.round(_bps),
-        fEps:  Math.round(_fEps*10)/10,
-        fEpsNote: _isFcast?"":"実", // 実績利益ベースの場合に表示
+      const _t=calcTheory(_bps,_fEps,_roa,_eqN,1);
+      const _tU=calcTheory(_bps,_fEpsU,_roa,_eqN,1);
+
+      // 期ラベル（四半期は期末日＋種別を付記）
+      const pEnd=approxPeriodEnd(s);
+      const pEndStr=pEnd.toISOString().slice(0,10);
+      const periodLabel=isFY
+        ?(s.CurFYEn||"").slice(0,7)
+        :pEnd.toISOString().slice(0,7)+" ("+s.CurPerType+")";
+
+      // ── 株式分割補正 ────────────────────────────────────
+      // 期末日より後に発生した分割の累積係数だけ割る
+      // （分割前の旧単位→現在の新単位に揃える）
+      // 分割後の期は sf=1 なので補正なし
+      const sf=getCumSplitFactor(pEndStr);
+      const splitNote=sf>1?`÷${sf}`:"";
+      const fEpsNote=(isFY
+        ?(_isFcast?"":"実")
+        :(_isFcast?"予":"推"))+splitNote;
+
+      out.push({
+        period:periodLabel,
+        effectivePeriod:effectiveDate(s), // 開示日ベースの有効日（チャート用）
+        isFY,
+        perType:s.CurPerType||"FY",
+        theory:Math.round(_t.theory/sf),
+        upper:Math.round(_tU.upper/sf),
+        bps:   Math.round(_bps/sf),
+        fEps:  Math.round(_fEps/sf*10)/10,
+        fEpsNote,
         roa:   Math.round(_roa*1000)/10,
         eq:    Math.round(_eqN*1000)/10,
         sales: Math.round(_ns/1e8*10)/10,
         opProfit:Math.round(_op/1e8*10)/10
       });
     });
+    return out;
+    }
+    const hist=buildHistArray(histRecs);
+    const chartHist=buildHistArray(chartHistRecs);
 
     // ★ リストと同一の丸め処理で渡す
     renderDetail({
@@ -1071,7 +1168,7 @@ async function loadDetail(code,screened){
       pbr:  Math.round(pbr*100)/100,
       div, div4,
       divYield:div>0&&price>0?Math.round(div/price*10000)/100:0,
-      hist, priceHist
+      hist, chartHist, priceHist
     });
   }catch(e){
     document.getElementById("d-content").innerHTML=
@@ -1187,15 +1284,17 @@ function renderDetail(d){
     </div>
     ${d.hist.length?`<div class="hist-wrap"><h4>財務履歴</h4>
       <table class="hist-tbl"><thead><tr>
-        <th>期</th><th>理論株価</th><th>BPS</th>
-        <th data-tip="予想EPS（はっしゃん式）。&#10;(実)は予想データなし→実績経常利益で代替">予想EPS</th>
+        <th data-tip="FY=通期決算（実績）&#10;1Q/2Q/3Q=四半期報告（当期年間予想ベース）">期</th>
+        <th data-tip="はっしゃん式理論株価（PBR=1基準）&#10;FY：実績または翌期予想ベース&#10;四半期：当期年間予想ベース">理論株価</th>
+        <th>BPS</th>
+        <th data-tip="予想EPS（はっしゃん式）&#10;予=当期年間予想FOdPベース&#10;実=実績OdPで代替&#10;推=FOdP無・年率換算推計">予想EPS</th>
         <th>ROA%</th><th>自己資本比率%</th><th>売上(億)</th><th>経常利益(億)</th>
       </tr></thead><tbody>
-        ${d.hist.map(h=>`<tr>
-          <td>${h.period}</td>
-          <td style="color:var(--gold)">¥${fmtPrice(h.theory)}</td>
+        ${d.hist.map(h=>`<tr class="${h.isFY?"":"hist-q-row"}">
+          <td style="${h.isFY?"":"color:var(--muted);font-size:12px"}">${h.period}</td>
+          <td style="color:${h.isFY?"var(--gold)":"#a07830"}">¥${fmtPrice(h.theory)}</td>
           <td>${fmtPrice(h.bps)}</td>
-          <td>${fmtEps(h.fEps)}${h.fEpsNote?`<span style="color:var(--muted);font-size:9px;margin-left:2px">(実)</span>`:""}</td>
+          <td>${fmtEps(h.fEps)}${h.fEpsNote?`<span style="color:var(--muted);font-size:9px;margin-left:2px">(${h.fEpsNote})</span>`:""}</td>
           <td class="${h.roa>=5?"pos":h.roa<2?"neg":""}">${fmtPct1(h.roa)}%</td>
           <td class="${h.eq>=50?"pos":h.eq<30?"neg":""}">${fmtPct1(h.eq)}%</td>
           <td>${h.sales}</td>
@@ -1238,20 +1337,32 @@ function buildChart(d,mode){
   const labels=d.priceHist.map(p=>p.date); // YYYY-MM-DD
   const closes=d.priceHist.map(p=>p.close);
   const n=labels.length;
-  // 理論株価・上限株価の時系列ライン（hist履歴から期ごとに変化）
+  // 理論株価・上限株価の時系列ライン（chartHist=全期間、hist=表示用8期）
   let theoryLine,upperLine;
-  if(d.hist&&d.hist.length){
-    const sh=[...d.hist].sort((a,b)=>a.period.localeCompare(b.period));
+  const shSrc=d.chartHist&&d.chartHist.length?d.chartHist:d.hist;
+  if(shSrc&&shSrc.length){
+    const sh=[...shSrc].sort((a,b)=>{
+      const da=a.effectivePeriod||a.period;
+      const db=b.effectivePeriod||b.period;
+      return da.localeCompare(db);
+    });
     theoryLine=labels.map(dateStr=>{
       const ym=dateStr.slice(0,7);
+      const dd=dateStr;
       let th=sh[0].theory;
-      for(const h of sh){if(h.period<=ym)th=h.theory;else break;}
+      for(const h of sh){
+        const effDate=h.effectivePeriod||h.period;
+        if(effDate<=dd)th=h.theory;else break;
+      }
       return th;
     });
     upperLine=labels.map(dateStr=>{
-      const ym=dateStr.slice(0,7);
+      const dd=dateStr;
       let up=sh[0].upper>sh[0].theory?sh[0].upper:d.t.upper;
-      for(const h of sh){if(h.period<=ym)up=h.upper||up;else break;}
+      for(const h of sh){
+        const effDate=h.effectivePeriod||h.period;
+        if(effDate<=dd)up=h.upper||up;else break;
+      }
       return up;
     });
   }else{
