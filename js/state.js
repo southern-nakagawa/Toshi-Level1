@@ -1,0 +1,36 @@
+// ══ グローバル設定 ══════════════════════════════════════════════════
+const PROXY = "http://localhost:8765";
+
+// ══ キャッシュ ══════════════════════════════════════════════════════
+let masterCache = null;
+let priceCache  = {};
+let finsCache   = {};
+
+// ══ スクリーニング状態 ══════════════════════════════════════════════
+let screenAbortCtrl  = null;   // スクリーニング中断用
+let lastResults      = [];
+let screeningDate    = null;
+let screeningPrices  = {};
+let lastProbeDate    = null;   // 個別履歴から確認した真の最新日
+
+// ══ 詳細パネル状態 ═══════════════════════════════════════════════════
+let activeCode       = null;
+let chart            = null;
+let currentDetailData= null;   // チャートスケール切替用
+let chartScaleMode   = 'all';  // 'all' | 'price'
+
+// ══ ソート状態 ══════════════════════════════════════════════════════
+let sortKeys = JSON.parse(
+  localStorage.getItem("screener_sort_keys") || '[{"key":"alpha","dir":"desc"}]'
+);
+
+// ══ ウォッチリスト ══════════════════════════════════════════════════
+let watchlist = JSON.parse(localStorage.getItem("screener_watchlist") || "[]");
+
+// ══ バックグラウンド収集 ═════════════════════════════════════════════
+let bgEnabled     = localStorage.getItem("screener_bg_enabled") === "true";
+let bgRunning     = false;
+let bgTimer       = null;
+let bgIndex       = 0;
+let bgInitialized = false;
+const BG_INTERVAL_MS = 13000;
