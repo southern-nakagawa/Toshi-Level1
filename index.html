@@ -613,14 +613,18 @@ function calcScreenResults(codes,prices,filters){
     // 四半期は経常利益を年率換算
     const qNS={'1Q':1,'2Q':2,'3Q':3,'FY':4}[stmt.CurPerType]||4;
     const annOp=qNS<4?op*(4/qNS):op;
-    // 予想fOp: 最新から遡って取得
+    // 予想fOp: FY実績なら当期OdP優先、四半期なら最新FOdPを遡って取得
     let fOp=0;
-    for(let i=rawStmts.length-1;i>=0;i--){
-      const v=safe(rawStmts[i].FOdP||rawStmts[i].FOP||rawStmts[i].NxFOdP||rawStmts[i].NxFOP);
-      if(v>0){fOp=v;break;}
+    if(qNS===4&&annOp>0){
+      fOp=annOp; // FY実績OdPを優先（旧四半期予想FOdPで上書きしない）
+    }else{
+      for(let i=rawStmts.length-1;i>=0;i--){
+        const v=safe(rawStmts[i].FOdP||rawStmts[i].FOP||rawStmts[i].NxFOdP||rawStmts[i].NxFOP);
+        if(v>0){fOp=v;break;}
+      }
     }
     const eqNorm=eq>1?eq/100:eq;
-    const fEps=fOp>0?fOp*.7/shares:(annOp>0?annOp*.7/shares:0);
+    const fEps=fOp>0?fOp*.7/shares:0;
     const roa =annOp>0?annOp/ta:0;
     const pbr =bps>0?price/bps:1;
     let div=0;
@@ -997,11 +1001,19 @@ async function loadDetail(code,screened){
     const validStmtsD=stmts.filter(s=>parseFloat(s.BPS||0)>0);
     const ls=validStmtsD.length?validStmtsD[validStmtsD.length-1]:(stmts.length?stmts[stmts.length-1]:{});
 
-    // 予想経常利益: 最新から遡って取得
+    // 予想経常利益: FY実績なら当期OdP優先、四半期なら最新FOdPを遡って取得
     let fOp=0;
-    for(let i=stmts.length-1;i>=0;i--){
-      const v=safe(stmts[i].FOdP||stmts[i].FOP);
-      if(v>0){fOp=v;break;}
+    {
+      const _qD={'1Q':1,'2Q':2,'3Q':3,'FY':4}[ls.CurPerType]||4;
+      const _opTmp=safe(ls.OdP||ls.OP);
+      if(_qD===4&&_opTmp>0){
+        fOp=_opTmp; // FY実績OdPを優先
+      }else{
+        for(let i=stmts.length-1;i>=0;i--){
+          const v=safe(stmts[i].FOdP||stmts[i].FOP);
+          if(v>0){fOp=v;break;}
+        }
+      }
     }
     // 配当: 最新から遡って取得
     let div=0;
@@ -1337,47 +1349,66 @@ function buildChart(d,mode){
   const labels=d.priceHist.map(p=>p.date); // YYYY-MM-DD
   const closes=d.priceHist.map(p=>p.close);
   const n=labels.length;
-  // 理論株価・上限株価の時系列ライン（chartHist=全期間、hist=表示用8期）
-  let theoryLine,upperLine;
-  const shSrc=d.chartHist&&d.chartHist.length?d.chartHist:d.hist;
-  if(shSrc&&shSrc.length){
-    const sh=[...shSrc].sort((a,b)=>{
-      const da=a.effectivePeriod||a.period;
-      const db=b.effectivePeriod||b.period;
-      return da.localeCompare(db);
-    });
-    theoryLine=labels.map(dateStr=>{
-      const ym=dateStr.slice(0,7);
-      const dd=dateStr;
-      let th=sh[0].theory;
-      for(const h of sh){
-        const effDate=h.effectivePeriod||h.period;
-        if(effDate<=dd)th=h.theory;else break;
-      }
-      return th;
-    });
-    upperLine=labels.map(dateStr=>{
-      const dd=dateStr;
-      let up=sh[0].upper>sh[0].theory?sh[0].upper:d.t.upper;
-      for(const h of sh){
-        const effDate=h.effectivePeriod||h.period;
-        if(effDate<=dd)up=h.upper||up;else break;
-      }
-      return up;
-    });
-  }else{
-    theoryLine=Array(n).fill(d.t.theory);
-    upperLine=Array(n).fill(d.t.upper);
-  }
+  // 理論株価・上限株価の時系列ライン — IIFEで4配列を同一スコープに確定
+  const _lines=(function(){
+    const shSrc=d.chartHist&&d.chartHist.length?d.chartHist:d.hist;
+    if(shSrc&&shSrc.length){
+      const sh=[...shSrc].sort((a,b)=>{
+        const da=a.effectivePeriod||a.period;
+        const db=b.effectivePeriod||b.period;
+        return da.localeCompare(db);
+      });
+      const firstEff=sh[0].effectivePeriod||sh[0].period;
+      return {
+        preTheory:labels.map(function(dd){
+          return dd<firstEff?sh[0].theory:null;
+        }),
+        preUpper:labels.map(function(dd){
+          if(dd>=firstEff)return null;
+          return sh[0].upper>sh[0].theory?sh[0].upper:d.t.upper;
+        }),
+        theoryLine:labels.map(function(dd){
+          if(dd<firstEff)return null;
+          var th=sh[0].theory;
+          for(var hi=0;hi<sh.length;hi++){
+            var effDate=sh[hi].effectivePeriod||sh[hi].period;
+            if(effDate<=dd)th=sh[hi].theory;else break;
+          }
+          return th;
+        }),
+        upperLine:labels.map(function(dd){
+          if(dd<firstEff)return null;
+          var up=sh[0].upper>sh[0].theory?sh[0].upper:d.t.upper;
+          for(var hi=0;hi<sh.length;hi++){
+            var effDate=sh[hi].effectivePeriod||sh[hi].period;
+            if(effDate<=dd)up=sh[hi].upper||up;else break;
+          }
+          return up;
+        })
+      };
+    }else{
+      return {
+        preTheory:[],preUpper:[],
+        theoryLine:Array(n).fill(d.t.theory),
+        upperLine:Array(n).fill(d.t.upper)
+      };
+    }
+  })();
+  var preTheory=_lines.preTheory;
+  var preUpper =_lines.preUpper;
+  var theoryLine=_lines.theoryLine;
+  var upperLine =_lines.upperLine;
 
-  let yMin,yMax;
+  var yMin,yMax;
   if(mode==="price"){
     const pMin=Math.min(...closes), pMax=Math.max(...closes);
     yMin=Math.round(pMin*0.9);
     yMax=Math.round(pMax*1.1);
-    // 範囲外の理論株価・上限株価はnullにして非表示
-    theoryLine=theoryLine.map(v=>(v!=null&&v>=yMin&&v<=yMax)?v:null);
-    upperLine =upperLine.map(v=>(v!=null&&v>=yMin&&v<=yMax)?v:null);
+    // 範囲外はnull
+    preTheory=preTheory.map(function(v){return(v!=null&&v>=yMin&&v<=yMax)?v:null;});
+    preUpper =preUpper.map(function(v){return(v!=null&&v>=yMin&&v<=yMax)?v:null;});
+    theoryLine=theoryLine.map(function(v){return(v!=null&&v>=yMin&&v<=yMax)?v:null;});
+    upperLine =upperLine.map(function(v){return(v!=null&&v>=yMin&&v<=yMax)?v:null;});
   }
   // X軸: 四半期末の最終営業日1本だけ表示
   const QUARTERS=new Set(['03','06','09','12']);
@@ -1407,6 +1438,15 @@ function buildChart(d,mode){
     {label:"株価",data:closes,
       borderColor:"#3b82f6",backgroundColor:"rgba(59,130,246,.07)",
       borderWidth:2,pointRadius:0,fill:true,tension:.3,yAxisID:"y"},
+    // 最古財務データ以前のグレー区間（データ不足の参考線）
+    {label:"理論株価(参考)",data:preTheory||[],
+      borderColor:"#64748b",backgroundColor:"transparent",
+      borderWidth:1,borderDash:[4,4],pointRadius:0,fill:false,tension:0,
+      spanGaps:false,yAxisID:"y"},
+    {label:"上限株価(参考)",data:preUpper||[],
+      borderColor:"#94a3b8",backgroundColor:"transparent",
+      borderWidth:1,borderDash:[4,4],pointRadius:0,fill:false,tension:0,
+      spanGaps:false,yAxisID:"y"},
     {label:"理論株価",data:theoryLine,
       borderColor:"#eab308",backgroundColor:"transparent",
       borderWidth:1.5,borderDash:[6,3],pointRadius:0,fill:false,tension:.3,
