@@ -34,3 +34,6 @@ let bgTimer       = null;
 let bgIndex       = 0;
 let bgInitialized = false;
 const BG_INTERVAL_MS = 13000;
+
+// ══ コア4条件キャッシュ ══════════════════════════════════════════
+let condCache = {};  // {code: {corr, disc, growth, div, score, computed}}

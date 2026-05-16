@@ -38,6 +38,10 @@ async function bgFetchNext(){
     const r=await fetch(`${PROXY}/proxy/fins?code=${code}`);
     const d=await r.json();
     finsCache[code]=d.data||[];
+    // BG時に計算できる条件を自動評価（API追加なし・③④のみ）
+    if(typeof computeConditionsBG==='function'){
+      try{computeConditionsBG(code);}catch(e){}
+    }
   }catch{}
   updateBgUI();
   bgTimer=setTimeout(bgFetchNext,BG_INTERVAL_MS);

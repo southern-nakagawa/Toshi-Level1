@@ -18,8 +18,15 @@ function onHeaderClick(key){
 function applySort(rows){
   return[...rows].sort((a,b)=>{
     for(const{key,dir}of sortKeys){
-      const va=a[key]??(STR_SORT.has(key)?"":0);
-      const vb=b[key]??(STR_SORT.has(key)?"":0);
+      let va,vb;
+      if(key==="condScore"){
+        // condCacheから動的参照（BG/詳細で随時更新される）
+        va=condCache[a.code]?condCache[a.code].score:-1;
+        vb=condCache[b.code]?condCache[b.code].score:-1;
+      }else{
+        va=a[key]??(STR_SORT.has(key)?"":0);
+        vb=b[key]??(STR_SORT.has(key)?"":0);
+      }
       if(va===vb)continue;
       if(STR_SORT.has(key)){
         const c=String(va).localeCompare(String(vb),"ja");

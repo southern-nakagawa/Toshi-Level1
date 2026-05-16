@@ -19,7 +19,7 @@ function hideSpProgress(){
 
 // ══ スクリーニング計算（共通）══════════════════════════════════
 function calcScreenResults(codes,prices,filters){
-  const {minA,maxA,minEq,minRoa,minDiv,noTrap}=filters;
+  const {minA,maxA,minEq,minRoa,minDiv,noTrap,minCond=0}=filters;
   const infoMap={};(masterCache||[]).forEach(s=>infoMap[s.Code]=s);
   const results=[];
   for(const code of codes){
@@ -72,6 +72,7 @@ function calcScreenResults(codes,prices,filters){
     if(noTrap&&vt)continue;
     const si=infoMap[code]||{};
     const lv=levelOf(a);
+    const _cond=condCache[code];
     results.push({
       code, name:si.CoName||"", market:si.MktNm||"", sector:si.S33Nm||"",
       price,...t,
@@ -82,14 +83,15 @@ function calcScreenResults(codes,prices,filters){
       roa:Math.round(roa*1000)/10,
       eq:Math.round(eq*1000)/10,
       pbr:Math.round(pbr*100)/100,
-      divYield, vt
+      divYield, vt,
+      condScore:_cond?_cond.score:null
     });
   }
   return results;
 }
 
 // ══ スクリーニング結果表示 ════════════════════════════════════════
-function showScreenResults(results,date,suffix){
+function showScreenResults(results,date,suffix,minCond=0){
   lastResults=results;
   const meta=document.getElementById("results-meta");
   const table=document.getElementById("results-table");
@@ -102,7 +104,12 @@ function showScreenResults(results,date,suffix){
     ?`<span style="color:#475569;font-size:10px;margin-left:4px">（株価取得: ${date}）</span>`:"";
   meta.innerHTML=`<strong>${results.length}銘柄</strong>が条件に一致 ／ 株価基準日: <strong>${displayDate}</strong>${dateSuffix}
     ${suffix?`<span style="color:var(--muted);font-size:11px;margin-left:8px">${suffix}</span>`:""}`;
-  renderTable(applySort(results).slice(0,300));
+  let sorted=applySort(results);
+  if(minCond>0){
+    const minC=typeof minCond!=='undefined'?minCond:0;
+    sorted=sorted.filter(r=>{const c=condCache[r.code];return c&&c.score>=minC;});
+  }
+  renderTable(sorted.slice(0,300));
 }
 
 // ══ ウォッチリスト → スクリーニングリスト表示 ════════════════════
@@ -206,6 +213,7 @@ async function runScreen(){
     minEq :parseFloat(document.getElementById("f-eq").value)||0,
     minRoa:parseFloat(document.getElementById("f-roa").value)||0,
     minDiv:parseFloat(document.getElementById("f-div").value)||0,
+    minCond:parseInt(document.getElementById("f-cond")?.value||"0")||0,
     noTrap:document.getElementById("f-notrap").checked,
     market:document.getElementById("f-market").value,
     sector:document.getElementById("f-sector").value,
@@ -238,7 +246,7 @@ async function runScreen(){
     const missingCodes=allCodes.filter(c=>!finsCache[c]||!finsCache[c].length);
     if(cachedCodes.length>0){
       const partial=calcScreenResults(cachedCodes,prices,filters);
-      showScreenResults(partial,date,missingCodes.length>0?`財務取得中 ${missingCodes.length}件…`:"");
+      showScreenResults(partial,date,missingCodes.length>0?`財務取得中 ${missingCodes.length}件…`:"",filters.minCond||0);
     }else if(missingCodes.length===0){
       showScreenResults([],date,"");
     }
@@ -263,14 +271,14 @@ async function runScreen(){
         setSpProgress(pct,`${done}/${missingCodes.length}件 取得中${remain>0?` 残約${remain}分`:""}`);
         if(done%20===0||done===missingCodes.length){
           const r=calcScreenResults(allCodes,prices,filters);
-          showScreenResults(r,date,done<missingCodes.length?`財務取得中 ${missingCodes.length-done}件残…`:"");
+          showScreenResults(r,date,done<missingCodes.length?`財務取得中 ${missingCodes.length-done}件残…`:"",filters.minCond||0);
         }
       }
       hideSpProgress();
     }
 
     const finalResults=calcScreenResults(allCodes,prices,filters);
-    showScreenResults(finalResults,date,"");
+    showScreenResults(finalResults,date,"",filters.minCond||0);
     screeningDate=date;screeningPrices=prices;
     console.log("[SCREEN] 完了 結果:",finalResults.length,"件");
 

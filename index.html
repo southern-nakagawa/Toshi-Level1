@@ -6,6 +6,41 @@
 <title>理論株価スクリーナー</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <link rel="stylesheet" href="style.css">
+<style>
+/* バリュートラップ警告バナー */
+.vt-banner{background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.5);border-radius:6px;
+  padding:8px 12px;margin:8px 16px;display:flex;align-items:center;gap:8px;
+  font-size:12px;color:#ef4444;flex-wrap:wrap;cursor:default;}
+/* 外部リンク */
+.ext-links{display:flex;gap:6px;flex-wrap:wrap;padding:7px 16px;
+  border-bottom:1px solid var(--border);align-items:center;}
+.ext-link{font-size:11px;padding:3px 9px;border:1px solid #334155;border-radius:4px;
+  color:#94a3b8;text-decoration:none;transition:border-color .15s,color .15s;white-space:nowrap;}
+.ext-link:hover{border-color:var(--accent);color:var(--accent);}
+/* 株規模・リスク */
+.size-wrap{padding:10px 16px;border-bottom:1px solid var(--border);}
+.size-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-top:6px;}
+.size-item{background:#0d1a2d;border-radius:6px;padding:7px 10px;display:flex;
+  align-items:center;gap:8px;cursor:default;}
+.size-badge{font-size:11px;padding:2px 8px;border-radius:10px;font-weight:600;white-space:nowrap;flex-shrink:0;}
+/* コア4条件 */
+.cond-wrap{padding:10px 16px;border-bottom:1px solid var(--border);}
+.cond-header{display:flex;justify-content:space-between;align-items:center;
+  margin-bottom:8px;font-size:12px;font-weight:600;color:var(--muted);cursor:default;}
+.cond-score{display:flex;align-items:center;letter-spacing:2px;cursor:default;}
+.cond-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;}
+.cond-item{background:#0d1a2d;border-radius:6px;padding:7px 10px;display:flex;
+  align-items:flex-start;gap:8px;cursor:default;border-left:2px solid #1e2535;}
+.cond-item.ok{border-left-color:#10b981;}
+.cond-item.ng{border-left-color:#334155;}
+.cond-item.pending{border-left-color:#1e2535;opacity:.7;}
+.cond-icon{font-size:15px;flex-shrink:0;margin-top:1px;}
+.cond-label{font-size:12px;font-weight:600;color:var(--text);}
+.cond-detail{font-size:11px;color:var(--muted);margin-top:2px;line-height:1.5;}
+/* テーブルのコア列 */
+.td-cond{text-align:center;line-height:1.4;white-space:nowrap;padding:4px 8px !important;cursor:default;}
+.td-cond span[style*="letter-spacing"]{display:inline-block;}
+</style>
 </head>
 <body>
 
@@ -58,6 +93,14 @@
       <input type="number" id="f-roa" value="0" style="width:80px"></div>
     <div class="fg" data-tip="配当利回りの下限（%）。&#10;年間配当 ÷ 株価 × 100%。&#10;0にすると無配当銘柄も含めます。3%以上が一般的に高配当の目安"><label>配当利回り 下限(%)</label>
       <input type="number" id="f-div" value="0" step="0.1" style="width:80px"></div>
+    <div class="fg" data-tip="コア4条件（正相関度・割安修正・持続成長・配当成長）の最低適合数でフィルタします。&#10;詳細を一度開いた銘柄のみ評価されます。未評価の銘柄はフィルタから除外されます。"><label>コア条件 適合数</label>
+      <select id="f-cond" style="width:80px">
+        <option value="0">指定なし</option>
+        <option value="1">1以上</option>
+        <option value="2">2以上</option>
+        <option value="3">3以上</option>
+        <option value="4">全適合(4)</option>
+      </select></div>
     <div class="fg chk" data-tip="バリュートラップ候補を除外します。&#10;PBR＜0.3 かつ α値＞100% の銘柄は&#10;市場が割安と見なさない理由がある可能性があります（業績悪化・倒産リスク等）">
       <input type="checkbox" id="f-notrap" checked>
       <label for="f-notrap">バリュートラップ除外</label></div>
@@ -98,6 +141,7 @@
           <th class="sortable" data-key="pbr" data-tip="株価純資産倍率（Price Book-value Ratio）">PBR<span class="sort-ind"></span></th>
           <th class="sortable" data-key="divYield" data-tip="配当利回り（%）">配当利回り%<span class="sort-ind"></span></th>
           <th data-tip="東証33業種分類">業種</th>
+          <th class="sortable" data-key="condScore" data-tip="企業価値コア4条件の適合数（0〜4）。&#10;詳細を一度開いた銘柄のみ表示。未評価は「—」&#10;正相関度・割安修正・持続成長・配当成長の4条件で判定">コア条件<span class="sort-ind"></span></th>
         </tr></thead>
         <tbody id="results-tbody"></tbody>
       </table>
@@ -122,6 +166,7 @@
 <script src="js/connect.js"></script>
 <script src="js/screening.js"></script>
 <script src="js/detail.js"></script>
+<script src="js/conditions.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>
