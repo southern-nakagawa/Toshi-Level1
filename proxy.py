@@ -5,7 +5,7 @@ J-Quants V2 API CORS プロキシ
 - 財務データ・銘柄一覧はキャッシュファイルに自動保存
 - Free プラン: 5リクエスト/分 → 自動スロットリング
 """
-import os, json, time, atexit
+import os, json, time, atexit, threading
 import requests
 from flask import Flask, request, jsonify, Response
 
@@ -50,12 +50,16 @@ def cors(resp):
 @app.after_request
 def add_cors(r): return cors(r)
 
+_throttle_lock = threading.Lock()
+
 def throttle():
-    wait = RATE_INTERVAL - (time.time() - mem["last_req"])
-    if wait > 0:
-        print(f"[RATE] {wait:.1f}秒待機...")
-        time.sleep(wait)
-    mem["last_req"] = time.time()
+    # スレッドセーフ: スクリーニングと詳細取得の同時実行による429を防止
+    with _throttle_lock:
+        wait = RATE_INTERVAL - (time.time() - mem["last_req"])
+        if wait > 0:
+            print(f"[RATE] {wait:.1f}秒待機...")
+            time.sleep(wait)
+        mem["last_req"] = time.time()
 
 def jget(path, params=None):
     throttle()

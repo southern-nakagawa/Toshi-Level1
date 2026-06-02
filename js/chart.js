@@ -52,7 +52,8 @@ function getSplitAdjustedHistory(quotes){
 
 // ══ チャート描画 ══════════════════════════════════════════════════
 function buildChart(d,mode){
-  if(chart){chart.destroy();chart=null;}
+  try{if(chart)chart.destroy();}catch(e){}
+  chart=null;
   if(!d||!d.priceHist||!d.priceHist.length)return;
   const canvas=document.getElementById("price-chart");
   if(!canvas)return;

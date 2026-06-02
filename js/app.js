@@ -63,3 +63,8 @@
     e.preventDefault();
   });
 })();
+
+// condCacheをページ離脱時に保存
+window.addEventListener("beforeunload",function(){
+  if(typeof saveCondCache==="function")saveCondCache();
+});

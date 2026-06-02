@@ -286,10 +286,19 @@ async function runScreen(){
     loading.classList.add("hidden");
     hideSpProgress();
     if(e.name==="AbortError"){
-      placeholder.classList.remove("hidden");
-      placeholder.textContent="⏹ スクリーニングを中断しました";
-      document.getElementById("results-table").classList.add("hidden");
-      document.getElementById("results-meta").classList.add("hidden");
+      // 中断時: 既に結果がある場合は表示を維持（クリアしない）
+      if(lastResults.length){
+        const meta=document.getElementById("results-meta");
+        if(meta&&!meta.classList.contains("hidden")){
+          meta.innerHTML+=' <span style="color:var(--amber);font-size:11px">⏹ 中断（現在の結果を表示中・詳細閲覧可）</span>';
+        }
+        // テーブル・メタはそのまま残す
+      }else{
+        placeholder.classList.remove("hidden");
+        placeholder.textContent="⏹ スクリーニングを中断しました";
+        document.getElementById("results-table").classList.add("hidden");
+        document.getElementById("results-meta").classList.add("hidden");
+      }
     }else{
       placeholder.classList.remove("hidden");
       placeholder.textContent="エラー: "+e.message;
