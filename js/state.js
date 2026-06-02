@@ -42,3 +42,6 @@ let condCache=(function(){
   catch(e){return {};}
 })();
 let realtimeCache={};  // Yahoo Finance現在株価（セッション中のみ）
+
+// 旧バージョンの誤判定データを掃除（取得失敗銘柄が誤って蓄積されていたため）
+try{localStorage.removeItem("screener_empty_fins");}catch(e){}

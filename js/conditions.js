@@ -242,7 +242,7 @@ function buildLightHist(stmts){
 
 // BG用条件計算: API追加なし・③持続成長④配当成長のみ評価
 // ①正相関②割安修正は株価履歴が必要 → null（詳細を開くと完全計算）
-function computeConditionsBG(code){
+function computeConditionsBG(code,skipSave){
   const stmts=finsCache[code];
   if(!stmts||!stmts.length)return;
   // 詳細で完全計算済みなら上書きしない
@@ -282,7 +282,8 @@ function computeConditionsBG(code){
 
   result.score=[result.corr?.ok,result.disc?.ok,result.growth?.ok,result.div?.ok].filter(Boolean).length;
   condCache[code]=result;
-  saveCondCache();
-  // テーブル行をリアルタイム更新
-  if(typeof updateRowBadge==='function')updateRowBadge(code);
+  if(!skipSave){
+    saveCondCache();
+    if(typeof updateRowBadge==='function')updateRowBadge(code);
+  }
 }

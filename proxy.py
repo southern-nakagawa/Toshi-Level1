@@ -217,6 +217,13 @@ def on_exit():
         valid = sum(1 for v in fins_cache.values() if v)
         print(f"\n[CACHE] 終了時保存: 有効{valid} / 総{len(fins_cache)}銘柄 → {FINS_CACHE_FILE}")
 
+# ── 全キャッシュ済み財務データを一括返却（フロントのfinsCache復元用） ──
+@app.route("/proxy/fins_all")
+def fins_all():
+    valid = {k: v for k, v in fins_cache.items() if v}
+    print(f"[FINS_ALL] {len(valid)}件を返却")
+    return jsonify({"data": valid, "count": len(valid)})
+
 if __name__ == "__main__":
     valid = sum(1 for v in fins_cache.values() if v)
     print("\n" + "="*52)
