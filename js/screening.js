@@ -132,7 +132,7 @@ async function showWatchlistResults(){
   const cached=Object.keys(priceCache).filter(d=>Object.keys(priceCache[d]).length>0);
   if(cached.length){
     date=cached.sort().at(-1);
-    prices=priceCache[date];
+    prices={...priceCache[date]};  // コピー（cacheを汚さない）
   }else{
     meta.classList.remove("hidden");
     meta.innerHTML=`<span style="color:var(--muted)">⭐ 株価データ取得中…</span>`;
@@ -149,7 +149,7 @@ async function showWatchlistResults(){
           });
         }catch{break;}
       }
-      if(Object.keys(priceCache[date]).length){prices=priceCache[date];break;}
+      if(Object.keys(priceCache[date]).length){prices={...priceCache[date]};break;}
       const prev=new Date(date+"T12:00:00Z");
       prev.setDate(prev.getDate()-1);
       while(prev.getDay()===0||prev.getDay()===6)prev.setDate(prev.getDate()-1);
@@ -170,15 +170,45 @@ async function showWatchlistResults(){
     }
   }
 
+  // ★ 一括株価に含まれない銘柄は個別株価を補完取得
+  const missingPrice=codes.filter(c=>!prices[c]);
+  if(missingPrice.length){
+    meta.classList.remove("hidden");
+    meta.innerHTML=`<span style="color:var(--muted)">⭐ 個別株価取得中… ${missingPrice.length}件</span>`;
+    for(const code of missingPrice){
+      try{
+        const r=await fetch(`${PROXY}/proxy/prices?code=${code}`);
+        const d=await r.json();
+        const quotes=d.data||[];
+        if(quotes.length)prices[code]=quotes[quotes.length-1];
+      }catch{}
+    }
+  }
+
   const wlFilters={minA:-9999,maxA:9999,minEq:0,minRoa:0,minDiv:0,noTrap:false};
   const results=calcScreenResults(codes,prices,wlFilters);
+
+  // ★ 計算できなかった銘柄も「データ不足」として必ず表示（登録順）
+  const okCodes=new Set(results.map(r=>r.code));
+  watchlist.forEach(w=>{
+    if(!okCodes.has(w.code)){
+      results.push({
+        code:w.code, name:w.name||"", market:w.market||"", sector:w.sector||"",
+        price:0,theory:0,upper:0,asset:0,business:0,
+        alpha:null,level:"データ不足",lcolor:"#6b7280",
+        bps:0,fEps:0,roa:0,eq:0,pbr:0,divYield:0,vt:false,
+        condScore:null,incomplete:true
+      });
+    }
+  });
 
   lastResults=results;
   placeholder.classList.add("hidden");
   table.classList.remove("hidden");
   meta.classList.remove("hidden");
+  const incompleteCount=results.filter(r=>r.incomplete).length;
   meta.innerHTML=`⭐ <strong>${results.length}銘柄</strong>のウォッチリスト ／ 株価基準日: <strong>${date}</strong>
-    ${results.length<codes.length?`<span style="color:var(--red);font-size:11px;margin-left:8px">（財務データ未取得: ${codes.length-results.length}件）</span>`:""}`;
+    ${incompleteCount>0?`<span style="color:var(--amber);font-size:11px;margin-left:8px">（データ不足: ${incompleteCount}件）</span>`:""}`;
   renderTable(applySort(results).slice(0,300));
 }
 

@@ -68,10 +68,51 @@ async function loadFilters(){
     ss.forEach(s=>sSel.appendChild(Object.assign(document.createElement("option"),{value:s,textContent:s})));
 
     startBgIfNeeded();
+    loadCachedFins();  // proxyのキャッシュ済み財務データを復元
   }catch(e){
     mSel.innerHTML=`<option value="">エラー</option>`;
     sSel.innerHTML=`<option value="">エラー</option>`;
     document.getElementById("placeholder").classList.remove("hidden");
     document.getElementById("placeholder").textContent="銘柄一覧取得エラー: "+e.message;
+  }
+}
+
+// ══ proxyのキャッシュ済み財務データを一括復元 ══════════════════════
+// ページ再読み込み後もfinsCacheを復元し、スクリーニングを即座に表示
+async function loadCachedFins(){
+  try{
+    const r=await fetch(`${PROXY}/proxy/fins_all`);
+    if(!r.ok)return;
+    const d=await r.json();
+    if(d.data&&typeof d.data==="object"){
+      let n=0;
+      for(const code in d.data){
+        if(d.data[code]&&d.data[code].length){
+          finsCache[code]=d.data[code];
+          n++;
+        }
+      }
+      console.log(`[CACHE] ${n}件の財務データを復元`);
+      // 復元したキャッシュ分のコア条件（③④）をBG計算で先行評価
+      if(typeof computeConditionsBG==="function"){
+        const codes=Object.keys(finsCache);
+        let i=0;
+        (function batch(){
+          const end=Math.min(i+300,codes.length);
+          for(;i<end;i++){
+            if(!condCache[codes[i]]){
+              try{computeConditionsBG(codes[i],true);}catch(e){}  // skipSave=true
+            }
+          }
+          if(i<codes.length){setTimeout(batch,30);}
+          else{
+            if(typeof saveCondCache==="function")saveCondCache();  // 最後に1回だけ保存
+            console.log("[CACHE] コア条件の先行計算完了");
+          }
+        })();
+      }
+    }
+  }catch(e){
+    console.warn("[CACHE] 復元失敗",e);
   }
 }

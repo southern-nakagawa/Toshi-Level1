@@ -5,6 +5,7 @@ function buildCondCell(code){
   const cond=condCache&&condCache[code];
   if(!cond){
     return '<td class="td-cond" data-tip="詳細を開くと計算されます&#10;①正相関 ②割安修正 ③持続成長 ④配当成長">'
+      +'<span style="font-size:10px;color:#334155;margin-right:4px;font-weight:700">—/4</span>'
       +'<span style="color:#334155;font-size:13px;letter-spacing:1px">○○○○</span></td>';
   }
   const items=[
@@ -20,8 +21,12 @@ function buildCondCell(code){
       ? '<span style="color:#10b981;font-size:13px" title="'+label+': 適合 ✅">●</span>'
       : '<span style="color:#475569;font-size:13px" title="'+label+': 非適合">○</span>';
   }).join('');
-  const bgNote=cond.bgOnly?' data-tip="①②は詳細を開くと計算。③持続成長 ④配当成長はBG計算済み&#10;●=適合 ○=非適合 🔍=詳細で計算"':' data-tip="①正相関 ②割安修正 ③持続成長 ④配当成長&#10;●=適合 ○=非適合"';
-  return '<td class="td-cond"'+bgNote+'>'+dots+'</td>';
+  const sc=cond.score;
+  const scoreColor=sc>=3?'#10b981':sc>=2?'#eab308':'#94a3b8';
+  const bgNote=cond.bgOnly?' data-tip="コア4条件 '+sc+'/4 (BG計算済み)&#10;①②は詳細を開くと完全計算&#10;③持続成長 ④配当成長は計算完了"':' data-tip="コア4条件 '+sc+'/4&#10;①正相関 ②割安修正 ③持続成長 ④配当成長&#10;●=適合 ○=非適合"';
+  return '<td class="td-cond"'+bgNote+'>'
+    +'<span style="font-size:11px;font-weight:700;color:'+scoreColor+';margin-right:4px">'+sc+'/4</span>'
+    +dots+'</td>';
 }
 
 function renderTable(rows){
@@ -31,6 +36,24 @@ function renderTable(rows){
     const tr=document.createElement("tr");
     tr.dataset.code=r.code;
     if(r.code===activeCode)tr.classList.add("active");
+    if(r.incomplete){
+      // データ不足銘柄: コード・銘柄名・業種のみ表示
+      tr.style.opacity="0.55";
+      tr.innerHTML=
+        '<td>'+r.code+'</td>'+
+        '<td title="'+r.name+'">'+r.name+'</td>'+
+        '<td class="num" colspan="13" style="color:var(--muted);text-align:left;padding-left:12px">'+
+          '⚠ データ取得不可（株価・財務データなし。上場廃止・取引停止等の可能性）</td>'+
+        '<td style="color:var(--muted);font-size:11px">'+(r.sector||"").replace("\u696d","")+'</td>'+
+        '<td class="td-cond"></td>';
+      tr.addEventListener("click",function(){
+        document.querySelectorAll("#results-tbody tr").forEach(function(t){t.classList.remove("active");});
+        tr.classList.add("active");
+        loadDetail(r.code,r);
+      });
+      tbody.appendChild(tr);
+      return;
+    }
     tr.innerHTML=
       '<td>'+r.code+'</td>'+
       '<td title="'+r.name+'">'+r.name+'</td>'+
