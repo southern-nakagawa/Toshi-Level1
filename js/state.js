@@ -36,4 +36,9 @@ let bgInitialized = false;
 const BG_INTERVAL_MS = 13000;
 
 // ══ コア4条件キャッシュ ══════════════════════════════════════════
-let condCache = {};  // {code: {corr, disc, growth, div, score, computed}}
+// condCache: localStorage永続化（ページリロード後も保持）
+let condCache=(function(){
+  try{return JSON.parse(localStorage.getItem("screener_cond_cache")||"{}");}
+  catch(e){return {};}
+})();
+let realtimeCache={};  // Yahoo Finance現在株価（セッション中のみ）

@@ -35,7 +35,8 @@ async function loadDetail(code,screened){
   const dc=document.getElementById("d-content");
   dc.classList.remove("hidden");
   dc.innerHTML='<div class="loading-wrap" style="padding:40px"><div class="spinner"></div><div class="loading-text">取得中\u2026</div></div>';
-  if(chart){chart.destroy();chart=null;}
+  try{if(chart)chart.destroy();}catch(e){}
+  chart=null;
   try{
     const myCode=code;
     const info=(masterCache||[]).find(s=>s.Code===code)||{};
@@ -153,7 +154,7 @@ async function loadDetail(code,screened){
     };
     renderDetail(dObj);
     if(typeof computeConditions==="function"){
-      try{const cond=computeConditions(dObj);condCache[code]=cond;renderConditionBlock(code,cond);updateRowBadge(code);}
+      try{const cond=computeConditions(dObj);condCache[code]=cond;if(typeof saveCondCache==="function")saveCondCache();renderConditionBlock(code,cond);updateRowBadge(code);}
       catch(e){console.warn("[COND]",e);}
     }
   }catch(e){

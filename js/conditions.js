@@ -1,3 +1,9 @@
+// condCache保存（localStorage）
+function saveCondCache(){
+  try{localStorage.setItem("screener_cond_cache",JSON.stringify(condCache));}
+  catch(e){}
+}
+
 // ══ コア4条件計算エンジン ══════════════════════════════════════════
 
 function pearson(xs, ys) {
@@ -181,8 +187,8 @@ function renderConditionBlock(code,cond){
 <div class="cond-wrap">
   <div class="cond-header">
     <span data-tip="企業価値コア4条件: 中長期投資に適した銘柄の特性を評価。&#10;詳細を開いた銘柄についてのみ計算されます。&#10;スクリーニング結果のリストでも適合数が表示されます。">企業価値コア4条件</span>
-    <span class="cond-score" data-tip="4条件の適合数。多いほど中長期投資に適した特性。&#10;●=適合 ○=非適合 🔍=詳細表示で計算">
-      ${scoreDotsHTML(cond)}
+    <span class="cond-score" data-tip="4条件の適合数。多いほど中長期投資に適した特性を持つ銘柄&#10;4/4: 優良候補 / 3/4: 有望 / 2/4: 要確認 / 1/4以下: 慎重に">
+      ${scoreDotsHTML(cond)} <strong style="margin-left:6px;font-size:14px">${cond.score}/4</strong>
     </span>
   </div>
   <div class="cond-grid">
@@ -276,6 +282,7 @@ function computeConditionsBG(code){
 
   result.score=[result.corr?.ok,result.disc?.ok,result.growth?.ok,result.div?.ok].filter(Boolean).length;
   condCache[code]=result;
+  saveCondCache();
   // テーブル行をリアルタイム更新
   if(typeof updateRowBadge==='function')updateRowBadge(code);
 }
