@@ -291,6 +291,7 @@ async function runScreen(){
           const r=await fetch(`${PROXY}/proxy/fins?code=${code}`,{signal:sig});
           const d=await r.json();
           finsCache[code]=d.data||[];
+          freshCodes.add(code);  // 取得済み → 明るく表示
         }catch(e){
           if(e.name==="AbortError")throw e;
           finsCache[code]=[];

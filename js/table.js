@@ -54,6 +54,7 @@ function renderTable(rows){
       tbody.appendChild(tr);
       return;
     }
+    if(!r.incomplete&&!freshCodes.has(r.code))tr.style.opacity="0.55";
     tr.innerHTML=
       '<td>'+r.code+'</td>'+
       '<td title="'+r.name+'">'+r.name+'</td>'+
