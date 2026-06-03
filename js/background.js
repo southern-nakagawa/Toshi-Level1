@@ -20,7 +20,7 @@ function startBgIfNeeded(){
 
 async function bgFetchNext(){
   if(!bgEnabled||!masterCache){bgRunning=false;updateBgUI();return;}
-  if(document.getElementById("screen-btn").disabled){
+  if(document.getElementById("screen-btn").disabled||detailLoading){
     bgTimer=setTimeout(bgFetchNext,BG_INTERVAL_MS);return;
   }
   const missing=masterCache.map(s=>s.Code).filter(c=>!finsCache[c]||!finsCache[c].length);
@@ -38,6 +38,7 @@ async function bgFetchNext(){
     const r=await fetch(`${PROXY}/proxy/fins?code=${code}`);
     const d=await r.json();
     finsCache[code]=d.data||[];
+    freshCodes.add(code);  // BG取得済み → 明るく表示
     // BG時に計算できる条件を自動評価（API追加なし・③④のみ）
     if(typeof computeConditionsBG==='function'){
       try{computeConditionsBG(code);}catch(e){}

@@ -37,6 +37,7 @@ async function loadDetail(code,screened){
   dc.innerHTML='<div class="loading-wrap" style="padding:40px"><div class="spinner"></div><div class="loading-text">取得中\u2026</div></div>';
   try{if(chart)chart.destroy();}catch(e){}
   chart=null;
+  detailLoading=true;  // BG競合を回避
   try{
     const myCode=code;
     const info=(masterCache||[]).find(s=>s.Code===code)||{};
@@ -45,13 +46,26 @@ async function loadDetail(code,screened){
       stmts=finsCache[code];
     }else{
       const fr=await fetch(`${PROXY}/proxy/fins?code=${code}`).then(r=>r.json());
-      if(activeCode!==myCode)return;
+      if(activeCode!==myCode){detailLoading=false;return;}
       stmts=Array.isArray(fr.data)?fr.data:(fr.data?[fr.data]:[]);
       finsCache[code]=stmts;
     }
-    const pr=await fetch(`${PROXY}/proxy/prices?code=${code}`).then(r=>r.json());
-    if(activeCode!==myCode)return;
-    const quotes=pr.data||[];
+    // 株価取得: キャッシュ優先・空なら最大2回リトライ（稀な取得失敗対策）
+    let quotes=[];
+    if(detailPriceCache[code]&&detailPriceCache[code].length){
+      quotes=detailPriceCache[code];
+    }else{
+      for(let attempt=0;attempt<2;attempt++){
+        try{
+          const pr=await fetch(`${PROXY}/proxy/prices?code=${code}`).then(r=>r.json());
+          if(activeCode!==myCode){detailLoading=false;return;}
+          quotes=pr.data||[];
+          if(quotes.length){detailPriceCache[code]=quotes;break;}
+        }catch(e){}
+        if(attempt===0)await new Promise(r=>setTimeout(r,600));  // 0.6秒待ってリトライ
+      }
+    }
+    freshCodes.add(code);  // 閲覧済み → 明るく表示
 
     const validStmtsD=stmts.filter(s=>parseFloat(s.BPS||0)>0);
     const ls=validStmtsD.length?validStmtsD[validStmtsD.length-1]:(stmts.length?stmts[stmts.length-1]:{});
@@ -157,8 +171,13 @@ async function loadDetail(code,screened){
       try{const cond=computeConditions(dObj);condCache[code]=cond;if(typeof saveCondCache==="function")saveCondCache();renderConditionBlock(code,cond);updateRowBadge(code);}
       catch(e){console.warn("[COND]",e);}
     }
+    // リストの該当行を標準の明るさに戻す（閲覧済み）
+    const _tr=document.querySelector('#results-tbody tr[data-code="'+code+'"]');
+    if(_tr)_tr.style.opacity="";
   }catch(e){
     document.getElementById("d-content").innerHTML=`<div class="empty-detail">エラー: ${e.message}</div>`;
+  }finally{
+    detailLoading=false;
   }
 }
 
@@ -167,7 +186,7 @@ function renderDetail(d){
   const ac=(d.a??0)>=0?"var(--green)":"var(--red)";
   const maxB=Math.max(d.price,d.t.theory,d.t.upper,1);
   const pct=v=>Math.round(v/maxB*100);
-  const watched=isWatched(d.code);
+  const watched=(typeof isWatchedAny==="function")?isWatchedAny(d.code):isWatched(d.code);
   const sz=d.marketCap>0?classifySize(d.marketCap):null;
   const pz=pbrZone(d.pbr);
   const roas=d.hist.map(h=>h.roa).filter(v=>v>0);
@@ -186,7 +205,7 @@ function renderDetail(d){
   </div>
   <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
     <button class="close-btn" id="close-detail">✕</button>
-    <button class="watch-btn${watched?" watched":""}" id="watch-btn">${watched?"★ 登録解除":"☆ ウォッチ登録"}</button>
+    <button class="watch-btn${watched?" watched":""}" id="watch-btn">${watched?"★ リスト編集":"☆ リスト登録"}</button>
   </div>
 </div>
 <div class="ext-links">
@@ -312,12 +331,16 @@ ${d.hist.length?`<div class="hist-wrap"><h4>財務履歴</h4>
 <div style="height:24px"></div>`;
 
   document.getElementById("close-detail").addEventListener("click",closeDetail);
-  document.getElementById("watch-btn").addEventListener("click",()=>{
-    toggleWatch(d.code,d.info);
-    const w=isWatched(d.code);
-    const btn=document.getElementById("watch-btn");
-    btn.textContent=w?"★ 登録解除":"☆ ウォッチ登録";
-    btn.classList.toggle("watched",w);
+  document.getElementById("watch-btn").addEventListener("click",(e)=>{
+    if(typeof openWatchPicker==="function"){
+      openWatchPicker(d.code,d.info,e.currentTarget);
+    }else{
+      toggleWatch(d.code,d.info);
+      const w=isWatched(d.code);
+      const btn=document.getElementById("watch-btn");
+      btn.textContent=w?"★ 登録解除":"☆ ウォッチ登録";
+      btn.classList.toggle("watched",w);
+    }
   });
   currentDetailData=d;
   ["yscale-all","yscale-price"].forEach(id=>{

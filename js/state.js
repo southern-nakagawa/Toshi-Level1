@@ -25,7 +25,23 @@ let sortKeys = JSON.parse(
 );
 
 // ══ ウォッチリスト ══════════════════════════════════════════════════
-let watchlist = JSON.parse(localStorage.getItem("screener_watchlist") || "[]");
+// 名前付きウォッチリスト（複数グループ対応）
+let watchlistGroups=(function(){
+  try{
+    const g=JSON.parse(localStorage.getItem("screener_wl_groups")||"null");
+    if(g&&typeof g==="object"&&Object.keys(g).length)return g;
+    // 旧形式（単一リスト）から移行
+    const old=JSON.parse(localStorage.getItem("screener_watchlist")||"[]");
+    return {"マイリスト":Array.isArray(old)?old:[]};
+  }catch(e){return {"マイリスト":[]};}
+})();
+let activeWatchlistName=localStorage.getItem("screener_wl_active")||Object.keys(watchlistGroups)[0]||"マイリスト";
+if(!watchlistGroups[activeWatchlistName]){
+  activeWatchlistName=Object.keys(watchlistGroups)[0]||"マイリスト";
+  if(!watchlistGroups[activeWatchlistName])watchlistGroups[activeWatchlistName]=[];
+}
+// watchlist は常にアクティブなグループを指す
+let watchlist=watchlistGroups[activeWatchlistName];
 
 // ══ バックグラウンド収集 ═════════════════════════════════════════════
 let bgEnabled     = localStorage.getItem("screener_bg_enabled") === "true";
@@ -45,3 +61,7 @@ let realtimeCache={};  // Yahoo Finance現在株価（セッション中のみ�
 
 // 旧バージョンの誤判定データを掃除（取得失敗銘柄が誤って蓄積されていたため）
 try{localStorage.removeItem("screener_empty_fins");}catch(e){}
+
+let detailPriceCache={};  // {code:quotes} 個別株価キャッシュ（再クリック高速化）
+let freshCodes=new Set(); // 当セッションで取得/閲覧した銘柄（明るく表示）
+let detailLoading=false;  // 詳細読込中フラグ（BG競合回避）
