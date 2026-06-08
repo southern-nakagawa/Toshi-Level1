@@ -8,6 +8,7 @@ let finsCache   = {};
 
 // ══ スクリーニング状態 ══════════════════════════════════════════════
 let screenAbortCtrl  = null;   // スクリーニング中断用
+let renderGen        = 0;      // 描画世代（ビュー切替で古い非同期描画を無効化）
 let lastResults      = [];
 let screeningDate    = null;
 let screeningPrices  = {};

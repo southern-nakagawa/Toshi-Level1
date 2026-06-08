@@ -40,6 +40,22 @@
 /* テーブルのコア列 */
 .td-cond{text-align:center;line-height:1.4;white-space:nowrap;padding:4px 8px !important;cursor:default;}
 .td-cond span[style*="letter-spacing"]{display:inline-block;}
+/* 詳細メトリクス: 数値を左・説明(ラベル/補足)を右に2行表示（文字サイズ標準・縦コンパクト） */
+.metric-grid{gap:5px !important;}
+.metric-grid .mc{
+  display:grid !important;
+  grid-template-columns:auto 1fr !important;
+  grid-template-areas:"val label" "val sub" !important;
+  align-items:center !important;
+  column-gap:12px !important;
+  row-gap:0 !important;
+  padding:8px 12px !important;
+}
+.metric-grid .mv{grid-area:val !important;align-self:center !important;}
+.metric-grid .ml{grid-area:label !important;align-self:end !important;margin:0 !important;}
+.metric-grid .ms{grid-area:sub !important;align-self:start !important;margin:0 !important;}
+.size-wrap{padding:8px 16px !important;}
+.bar-wrap{padding-top:8px !important;padding-bottom:8px !important;}
 </style>
 </head>
 <body>
@@ -73,6 +89,7 @@
         <input type="checkbox" id="bg-toggle"> BG収集
       </label>
       <button class="btn-sm" id="watchlist-btn">⭐ <span id="wl-badge" class="wl-badge hidden">0</span> ウォッチリスト</button>
+      <button class="btn-sm" id="cache-clear-btn" data-tip="キャッシュを全消去して最新データを取り直します。&#10;次回スクリーニングで再収集されます（時間がかかります）">🗑 キャッシュ</button>
       <span class="badge-ok">● 接続中</span>
       <button class="btn-sm" id="disconnect-btn">切断</button>
     </div>

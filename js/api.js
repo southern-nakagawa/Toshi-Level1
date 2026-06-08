@@ -26,7 +26,28 @@ function latestDateStart(){
 
 // ══ 最新株価日の特定 ══════════════════════════════════════════════
 // ①トヨタ(72030)個別履歴で最新日を取得 → ②bulk取得試行
+// 今日のカレンダー日（ローカル）
+function todayStr(){
+  const d=new Date();
+  return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+}
+
 async function detectLatestPriceDate(sig){
+  const savedDate=localStorage.getItem("screener_last_price_date");
+  const detectDay=localStorage.getItem("screener_detect_day");
+  const today=todayStr();
+  const dayChanged=(detectDay!==today);  // 前回検出から日付が変わったか
+
+  // 日付が変わっていなければ保存日を再利用（高速・プローブなし）
+  if(!dayChanged&&savedDate){
+    if(priceCache[savedDate]&&Object.keys(priceCache[savedDate]).length>0){
+      return {bulkDate:savedDate, probeDate:savedDate};
+    }
+    const cnt=await fetchPricesForDate(savedDate,sig);
+    if(cnt>0)return {bulkDate:savedDate, probeDate:savedDate};
+  }
+
+  // 日付が変わった or キャッシュなし → トヨタで最新営業日を再検出（1日1回）
   let probeDate=null;
   try{
     const r=await fetch(`${PROXY}/proxy/prices?code=72030`,{signal:sig});
@@ -37,9 +58,7 @@ async function detectLatestPriceDate(sig){
     }
   }catch(e){if(e.name==="AbortError")throw e;}
 
-  const savedDate=localStorage.getItem("screener_last_price_date");
   let startDate=probeDate||savedDate||latestDateStart();
-
   let bulkDate=startDate;
   for(let i=0;i<5;i++){
     if(sig.aborted)throw new DOMException("中断","AbortError");
@@ -47,6 +66,7 @@ async function detectLatestPriceDate(sig){
     if(cnt>0)break;
     bulkDate=prevTradingDay(bulkDate);
   }
+  localStorage.setItem("screener_detect_day",today);  // 本日検出済みと記録
   return {bulkDate, probeDate: probeDate||bulkDate};
 }
 

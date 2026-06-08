@@ -24,7 +24,21 @@ async function bgFetchNext(){
     bgTimer=setTimeout(bgFetchNext,BG_INTERVAL_MS);return;
   }
   const missing=masterCache.map(s=>s.Code).filter(c=>!finsCache[c]||!finsCache[c].length);
-  if(!missing.length){bgRunning=false;updateBgUI();return;}
+  if(!missing.length){
+    // 全件収集済み → 暗い（未確認）銘柄を順次明るくする（APIなし・高速）
+    const dim=masterCache.map(s=>s.Code).filter(c=>finsCache[c]&&finsCache[c].length&&!freshCodes.has(c));
+    if(dim.length){
+      dim.slice(0,12).forEach(c=>{
+        freshCodes.add(c);
+        if(typeof brightenRow==="function")brightenRow(c);
+        if(typeof updateRowBadge==="function")updateRowBadge(c);
+      });
+      updateBgUI();
+      bgTimer=setTimeout(bgFetchNext,1200);  // APIを使わないので高速
+      return;
+    }
+    bgRunning=false;updateBgUI();return;
+  }
   if(!bgInitialized){
     bgInitialized=true;
     const saved=localStorage.getItem("screener_bg_next_code");
@@ -39,6 +53,7 @@ async function bgFetchNext(){
     const d=await r.json();
     finsCache[code]=d.data||[];
     freshCodes.add(code);  // BG取得済み → 明るく表示
+    if(typeof brightenRow==="function")brightenRow(code);
     // BG時に計算できる条件を自動評価（API追加なし・③④のみ）
     if(typeof computeConditionsBG==='function'){
       try{computeConditionsBG(code);}catch(e){}

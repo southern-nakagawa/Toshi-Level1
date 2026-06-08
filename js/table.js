@@ -112,3 +112,9 @@ function closeDetail(){
   activeCode=null;
   if(chart){chart.destroy();chart=null;}
 }
+
+// 指定銘柄の行を標準の明るさに戻す（freshCodes追加後に呼ぶ）
+function brightenRow(code){
+  const tr=document.querySelector('#results-tbody tr[data-code="'+code+'"]');
+  if(tr&&!tr.querySelector('[colspan]'))tr.style.opacity="";
+}
