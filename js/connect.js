@@ -116,3 +116,31 @@ async function loadCachedFins(){
     console.warn("[CACHE] 復元失敗",e);
   }
 }
+
+// ══ キャッシュクリア ══════════════════════════════════════════════
+(function(){
+  const btn=document.getElementById("cache-clear-btn");
+  if(!btn)return;
+  btn.addEventListener("click",async()=>{
+    if(!confirm("キャッシュ（財務・株価・コア条件）を全て消去しますか？\n次回スクリーニングで最新データを取り直します（再収集に時間がかかります）。\n\n※ウォッチリストは消えません"))return;
+    btn.disabled=true;btn.textContent="消去中…";
+    try{
+      await fetch(`${PROXY}/proxy/cache_clear`,{method:"POST"});
+    }catch(e){}
+    // フロント側キャッシュも消去
+    finsCache={};
+    priceCache={};
+    condCache={};
+    freshCodes=new Set();
+    try{
+      localStorage.removeItem("screener_cond_cache");
+      localStorage.removeItem("screener_last_price_date");
+      localStorage.removeItem("screener_detect_day");
+      localStorage.removeItem("screener_bg_next_code");
+    }catch(e){}
+    bgIndex=0;bgInitialized=false;
+    alert("キャッシュを消去しました。スクリーニングを実行すると最新データを取得します。");
+    btn.disabled=false;btn.textContent="🗑 キャッシュ";
+    updateBgUI();
+  });
+})();

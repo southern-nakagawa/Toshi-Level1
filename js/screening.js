@@ -114,6 +114,11 @@ function showScreenResults(results,date,suffix,minCond=0){
 
 // ══ ウォッチリスト → スクリーニングリスト表示 ════════════════════
 async function showWatchlistResults(){
+  // 実行中のスクリーニングを中断（テーブル描画の競合を防止）
+  if(screenAbortCtrl){try{screenAbortCtrl.abort();}catch(e){}}
+  const myGen=++renderGen;  // この表示の描画世代
+  const alive=()=>myGen===renderGen;
+
   const meta=document.getElementById("results-meta");
   const placeholder=document.getElementById("placeholder");
   const table=document.getElementById("results-table");
@@ -162,6 +167,7 @@ async function showWatchlistResults(){
     meta.classList.remove("hidden");
     meta.innerHTML=`<span style="color:var(--muted)">⭐ 財務データ取得中… ${missing.length}件</span>`;
     for(const code of missing){
+      if(!alive())return;  // 別リスト/ビューに切替 → 中断
       try{
         const r=await fetch(`${PROXY}/proxy/fins?code=${code}`);
         const d=await r.json();
@@ -169,6 +175,7 @@ async function showWatchlistResults(){
       }catch{}
     }
   }
+  if(!alive())return;
 
   // ★ 一括株価に含まれない銘柄は個別株価を補完取得
   const missingPrice=codes.filter(c=>!prices[c]);
@@ -176,6 +183,7 @@ async function showWatchlistResults(){
     meta.classList.remove("hidden");
     meta.innerHTML=`<span style="color:var(--muted)">⭐ 個別株価取得中… ${missingPrice.length}件</span>`;
     for(const code of missingPrice){
+      if(!alive())return;  // 別リスト/ビューに切替 → 中断
       try{
         const r=await fetch(`${PROXY}/proxy/prices?code=${code}`);
         const d=await r.json();
@@ -184,6 +192,7 @@ async function showWatchlistResults(){
       }catch{}
     }
   }
+  if(!alive())return;
 
   const wlFilters={minA:-9999,maxA:9999,minEq:0,minRoa:0,minDiv:0,noTrap:false};
   const results=calcScreenResults(codes,prices,wlFilters);
@@ -202,6 +211,7 @@ async function showWatchlistResults(){
     }
   });
 
+  if(!alive())return;
   lastResults=results;
   placeholder.classList.add("hidden");
   table.classList.remove("hidden");
@@ -228,6 +238,8 @@ document.getElementById("abort-btn").addEventListener("click",()=>{
 async function runScreen(){
   screenAbortCtrl=new AbortController();
   const sig=screenAbortCtrl.signal;
+  const myGen=++renderGen;  // この実行の描画世代
+  const alive=()=>!sig.aborted&&myGen===renderGen;  // 中断もビュー切替もされていない
   const btn=document.getElementById("screen-btn");
   const abortBtn=document.getElementById("abort-btn");
   const loading=document.getElementById("loading");
@@ -262,6 +274,20 @@ async function runScreen(){
     if(filters.market)stocks=stocks.filter(s=>s.MktNm===filters.market);
     if(filters.sector)stocks=stocks.filter(s=>s.S33Nm===filters.sector);
 
+    // Phase0: 既存キャッシュで即座に一覧表示（真っ白回避・暗く表示）
+    // 日付検出/取得を待たず、直近のキャッシュ済み株価で先に描画する
+    const cachedDates=Object.keys(priceCache).filter(d=>priceCache[d]&&Object.keys(priceCache[d]).length>0);
+    if(cachedDates.length){
+      const pd=cachedDates.sort().at(-1);
+      const pp=priceCache[pd];
+      const codes0=stocks.map(s=>s.Code).filter(c=>pp[c]&&finsCache[c]&&finsCache[c].length);
+      if(codes0.length&&alive()){
+        loading.classList.add("hidden");
+        const r0=calcScreenResults(codes0,pp,filters);
+        showScreenResults(r0,pd,"最新の株価を確認中…",filters.minCond||0);
+      }
+    }
+
     setProgress(20,"最新株価日を確認中…","(基準日を特定中)");
     const {bulkDate,probeDate}=await detectLatestPriceDate(sig);
     const date=bulkDate;
@@ -274,6 +300,7 @@ async function runScreen(){
     // Phase1: キャッシュ済みを即表示
     const cachedCodes=allCodes.filter(c=>finsCache[c]&&finsCache[c].length);
     const missingCodes=allCodes.filter(c=>!finsCache[c]||!finsCache[c].length);
+    if(!alive())return;
     if(cachedCodes.length>0){
       const partial=calcScreenResults(cachedCodes,prices,filters);
       showScreenResults(partial,date,missingCodes.length>0?`財務取得中 ${missingCodes.length}件…`:"",filters.minCond||0);
@@ -286,6 +313,7 @@ async function runScreen(){
       setSpProgress(0,`0/${missingCodes.length}件 取得中`);
       for(let i=0;i<missingCodes.length;i++){
         if(sig.aborted)throw new DOMException("中断","AbortError");
+        if(myGen!==renderGen)return;  // ビューが切り替わった → 描画せず終了
         const code=missingCodes[i];
         try{
           const r=await fetch(`${PROXY}/proxy/fins?code=${code}`,{signal:sig});
@@ -300,7 +328,7 @@ async function runScreen(){
         const pct=Math.round(done/missingCodes.length*100);
         const remain=Math.round((missingCodes.length-done)*14/60);
         setSpProgress(pct,`${done}/${missingCodes.length}件 取得中${remain>0?` 残約${remain}分`:""}`);
-        if(done%20===0||done===missingCodes.length){
+        if((done%20===0||done===missingCodes.length)&&alive()){
           const r=calcScreenResults(allCodes,prices,filters);
           showScreenResults(r,date,done<missingCodes.length?`財務取得中 ${missingCodes.length-done}件残…`:"",filters.minCond||0);
         }
@@ -308,6 +336,7 @@ async function runScreen(){
       hideSpProgress();
     }
 
+    if(!alive())return;
     const finalResults=calcScreenResults(allCodes,prices,filters);
     showScreenResults(finalResults,date,"",filters.minCond||0);
     screeningDate=date;screeningPrices=prices;
@@ -317,13 +346,14 @@ async function runScreen(){
     loading.classList.add("hidden");
     hideSpProgress();
     if(e.name==="AbortError"){
-      // 中断時: 既に結果がある場合は表示を維持（クリアしない）
-      if(lastResults.length){
+      // ビューが切り替わって中断された場合は表示に一切触れない
+      if(myGen!==renderGen){
+        // ウォッチリスト等へ切替済み → 何もしない
+      }else if(lastResults.length){
         const meta=document.getElementById("results-meta");
         if(meta&&!meta.classList.contains("hidden")){
           meta.innerHTML+=' <span style="color:var(--amber);font-size:11px">⏹ 中断（現在の結果を表示中・詳細閲覧可）</span>';
         }
-        // テーブル・メタはそのまま残す
       }else{
         placeholder.classList.remove("hidden");
         placeholder.textContent="⏹ スクリーニングを中断しました";
