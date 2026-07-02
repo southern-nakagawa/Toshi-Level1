@@ -1,3 +1,42 @@
+// ══ シャープレシオ ════════════════════════════════════════════════
+const SHARPE_RISK_FREE_RATE=0.01; // 無リスク金利（定数仮置き・日本国債目安）
+const SHARPE_TRADING_DAYS=252;
+// priceHist: [{date,close},...] 昇順・最大2年(504営業日)を想定
+function calcSharpe(priceHist){
+  if(!priceHist||priceHist.length<30)return null;
+  const sorted=priceHist.slice().sort((a,b)=>a.date.localeCompare(b.date));
+  const closes=sorted.map(p=>p.close).filter(c=>c>0);
+  if(closes.length<30)return null;
+  const rets=[];
+  for(let i=1;i<closes.length;i++){
+    rets.push(closes[i]/closes[i-1]-1);
+  }
+  if(!rets.length)return null;
+  const meanD=rets.reduce((a,b)=>a+b,0)/rets.length;
+  const varD=rets.reduce((a,r)=>a+(r-meanD)**2,0)/rets.length;
+  const stdD=Math.sqrt(varD);
+  if(stdD===0)return null;
+  const annReturn=meanD*SHARPE_TRADING_DAYS;
+  const annStd=stdD*Math.sqrt(SHARPE_TRADING_DAYS);
+  const sharpe=(annReturn-SHARPE_RISK_FREE_RATE)/annStd;
+  return{
+    sharpe:Math.round(sharpe*100)/100,
+    annReturn:Math.round(annReturn*1000)/10,  // %表示
+    annStd:Math.round(annStd*1000)/10,        // %表示
+    years:Math.round(closes.length/SHARPE_TRADING_DAYS*10)/10
+  };
+}
+
+function renderSharpeBlock(sh){
+  const vEl=document.getElementById("sharpe-val"),sEl=document.getElementById("sharpe-sub");
+  if(!vEl)return;
+  if(!sh){vEl.textContent="算出不可";vEl.style.color="var(--muted)";if(sEl)sEl.textContent="株価データ不足";return;}
+  const color=sh.sharpe>=1?"var(--green)":sh.sharpe>=0?"var(--amber)":"var(--red)";
+  vEl.textContent=sh.sharpe.toFixed(2);
+  vEl.style.color=color;
+  if(sEl)sEl.textContent=`年率リターン ${sh.annReturn}% ／ 年率σ ${sh.annStd}%（${sh.years}年分）`;
+}
+
 // ══ 株規模・リスク分類ヘルパー ════════════════════════════════════
 function classifySize(mc){
   if(mc>=1e12)return{label:'大型株',color:'#3b82f6',note:'機関投資家も多く安定',level:'中長期向き・安定'};
@@ -171,6 +210,13 @@ async function loadDetail(code,screened){
       try{const cond=computeConditions(dObj);condCache[code]=cond;if(typeof saveCondCache==="function")saveCondCache();renderConditionBlock(code,cond);updateRowBadge(code);}
       catch(e){console.warn("[COND]",e);}
     }
+    try{
+      const sh=calcSharpe(priceHist);
+      sharpeCache[code]=sh;  // nullでも「計算済み・データ不足」として保持
+      saveSharpeCache();
+      if(typeof updateRowSharpe==="function")updateRowSharpe(code);
+      if(typeof renderSharpeBlock==="function")renderSharpeBlock(sh);
+    }catch(e){console.warn("[SHARPE]",e);}
     // リストの該当行を標準の明るさに戻す（閲覧済み）
     const _tr=document.querySelector('#results-tbody tr[data-code="'+code+'"]');
     if(_tr)_tr.style.opacity="";
@@ -210,7 +256,7 @@ async function fetchRTBar(code,maxB,theory,jqPrice){
     const c90c=chg90===null?"":chg90>=0?"var(--green)":"var(--red)";
     const tag=rt.isPrev?"<span style='font-size:9px;color:var(--muted)'>前終</span> ":"";
     val.innerHTML=tag+"¥"+fmtPrice(rt.price)+(over?"↑":"")
-      +(chg90!==null?" <span style='font-size:10px;color:"+c90c+"' data-tip='90日前(データ基準日)の株価からの増減'>"+(chg90>=0?"+":"")+chg90+"%</span>":"")
+      +(chg90!==null?" <span style='font-size:10px;color:"+c90c+"' data-tip='90日前(データ基準日)の株価からの増減'>90日前比"+(chg90>=0?"+":"")+chg90+"%</span>":"")
       +(a!==null?" <span style='font-size:10px;color:"+(a>=0?"var(--green)":"var(--red)")+"'>α"+(a>=0?"+":"")+a+"%</span>":"");
     row.style.display="";
   }catch(e){
@@ -292,6 +338,11 @@ ${d.vt?`<div class="vt-banner" data-tip="PBR ${fmtPbr(d.pbr)}倍かつα値 +${f
     <div class="ms">利回り: ${fmtPct1(d.divYield)}%</div></div>
   <div class="mc"><div class="ml">配当4%ライン</div><div class="mv">¥${fmtPrice(d.div4)}</div>
     <div class="ms">長期保有の目安</div></div>`:""}
+  <div class="mc" id="sharpe-card" data-tip="シャープレシオ = (年率リターン − 無リスク金利1.0%) ÷ 年率標準偏差&#10;過去最大2年の株価データから算出。1.0以上で良好、2.0以上で優秀とされる目安">
+    <div class="ml">シャープレシオ（2年・年率）</div>
+    <div class="mv" id="sharpe-val">計算中…</div>
+    <div class="ms" id="sharpe-sub"></div>
+  </div>
 </div>
 <div class="size-wrap">
   <h4 style="margin:0 0 8px;font-size:12px;color:var(--muted)">株規模・投資難易度</h4>

@@ -29,6 +29,19 @@ function buildCondCell(code){
     +dots+'</td>';
 }
 
+// シャープレシオセル生成（詳細を開くと計算・td-condの右隣に表示）
+function buildSharpeCell(code){
+  const sh=sharpeCache&&sharpeCache[code];
+  if(sh===undefined){
+    return '<td class="num muted td-sharpe" data-tip="シャープレシオ（2年・年率換算）&#10;詳細を開くと計算されます">—</td>';
+  }
+  if(sh===null){
+    return '<td class="num muted td-sharpe" data-tip="株価データ不足で算出不可">—</td>';
+  }
+  const cls=sh.sharpe>=1?"pos":sh.sharpe<0?"neg":"";
+  return '<td class="num '+cls+' td-sharpe" data-tip="シャープレシオ（2年・年率）&#10;年率リターン '+sh.annReturn+'% ／ 年率σ '+sh.annStd+'%">'+sh.sharpe.toFixed(2)+'</td>';
+}
+
 function renderTable(rows){
   const tbody=document.getElementById("results-tbody");
   tbody.innerHTML="";
@@ -45,7 +58,8 @@ function renderTable(rows){
         '<td class="num" colspan="13" style="color:var(--muted);text-align:left;padding-left:12px">'+
           '⚠ データ取得不可（株価・財務データなし。上場廃止・取引停止等の可能性）</td>'+
         '<td style="color:var(--muted);font-size:11px">'+(r.sector||"").replace("\u696d","")+'</td>'+
-        '<td class="td-cond"></td>';
+        '<td class="td-cond"></td>'+
+        '<td class="td-sharpe"></td>';
       tr.addEventListener("click",function(){
         document.querySelectorAll("#results-tbody tr").forEach(function(t){t.classList.remove("active");});
         tr.classList.add("active");
@@ -74,7 +88,8 @@ function renderTable(rows){
         (r.divYield>0?fmtPct1(r.divYield)+"%":"—")+'</td>'+
       '<td style="color:var(--muted);font-size:11px">'+
         (r.sector||"").replace("\u696d","")+'</td>'+
-      buildCondCell(r.code);
+      buildCondCell(r.code)+
+      buildSharpeCell(r.code);
     tr.addEventListener("click",function(){
       document.querySelectorAll("#results-tbody tr").forEach(function(t){t.classList.remove("active");});
       tr.classList.add("active");
@@ -101,6 +116,25 @@ function updateRowBadge(code){
   if(typeof sortKeys!=="undefined"&&sortKeys.length&&
      sortKeys[0].key==="condScore"&&
      typeof lastResults!=="undefined"&&lastResults.length){
+    renderTable(applySort(lastResults).slice(0,300));
+  }
+}
+
+// テーブル行のシャープレシオセルを差し替え（detail計算後に呼ばれる）
+function updateRowSharpe(code){
+  const tr=document.querySelector("#results-tbody tr[data-code=\""+code+"\"]");
+  if(!tr)return;
+  const td=tr.querySelector(".td-sharpe");
+  if(!td)return;
+  const tmp=document.createElement("tbody");
+  tmp.innerHTML=buildSharpeCell(code);
+  const newTd=tmp.querySelector("td");
+  if(newTd)td.replaceWith(newTd);
+  if(typeof sortKeys!=="undefined"&&sortKeys.length&&
+     sortKeys[0].key==="sharpe"&&
+     typeof lastResults!=="undefined"&&lastResults.length){
+    const row=lastResults.find(r=>r.code===code);
+    if(row)row.sharpe=sharpeCache[code]?sharpeCache[code].sharpe:null;
     renderTable(applySort(lastResults).slice(0,300));
   }
 }
