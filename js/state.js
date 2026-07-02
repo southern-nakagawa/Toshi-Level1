@@ -60,6 +60,16 @@ let condCache=(function(){
 })();
 let realtimeCache={};  // Yahoo Finance現在株価（セッション中のみ）
 
+// sharpeCache: シャープレシオ（詳細閲覧時に計算・localStorage永続化）
+let sharpeCache=(function(){
+  try{return JSON.parse(localStorage.getItem("screener_sharpe_cache")||"{}");}
+  catch(e){return {};}
+})();
+function saveSharpeCache(){
+  try{localStorage.setItem("screener_sharpe_cache",JSON.stringify(sharpeCache));}
+  catch(e){}
+}
+
 // 旧バージョンの誤判定データを掃除（取得失敗銘柄が誤って蓄積されていたため）
 try{localStorage.removeItem("screener_empty_fins");}catch(e){}
 

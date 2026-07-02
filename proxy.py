@@ -5,7 +5,7 @@ J-Quants V2 API CORS プロキシ
 - 財務データ・銘柄一覧はキャッシュファイルに自動保存
 - Free プラン: 5リクエスト/分 → 自動スロットリング
 """
-import os, json, time, atexit, threading
+import os, json, time, atexit, threading, signal
 import requests
 from flask import Flask, request, jsonify, Response
 
@@ -28,8 +28,20 @@ def load_json(path):
     except: return None
 
 def save_json(path, data):
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False)
+    # アトミック書き込み: 一時ファイルに書いてから置換。
+    # 書込中にCtrl+C等で中断されても本体ファイルは壊れない。
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())   # 確実にディスクへ書き込む
+        os.replace(tmp, path)      # アトミックな置換（OSが保証）
+    except Exception as e:
+        print(f"[SAVE] 保存エラー {path}: {e}")
+        try:
+            if os.path.exists(tmp): os.remove(tmp)
+        except: pass
 
 _raw_fins    = load_json(FINS_CACHE_FILE) or {}
 # 旧形式（dict単体）→ 新形式（list）に自動変換
@@ -210,12 +222,35 @@ def fins():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@atexit.register
-def on_exit():
+_saving = False  # 保存中フラグ（Ctrl+C連打対策）
+
+def save_all():
     if fins_cache:
         save_json(FINS_CACHE_FILE, fins_cache)
         valid = sum(1 for v in fins_cache.values() if v)
-        print(f"\n[CACHE] 終了時保存: 有効{valid} / 総{len(fins_cache)}銘柄 → {FINS_CACHE_FILE}")
+        print(f"[CACHE] 保存完了: 有効{valid} / 総{len(fins_cache)}銘柄 → {FINS_CACHE_FILE}")
+
+@atexit.register
+def on_exit():
+    save_all()
+
+def _graceful_exit(signum, frame):
+    # 1回目のCtrl+Cで保存開始。保存中の2回目以降のCtrl+Cは無視する。
+    global _saving
+    if _saving:
+        print("\n[EXIT] 保存中です。Ctrl+Cを押さずにお待ちください…")
+        return
+    _saving = True
+    print("\n[EXIT] キャッシュを保存しています… (Ctrl+Cを押さないでください)")
+    try:
+        save_all()
+    except Exception as e:
+        print(f"[EXIT] 保存エラー: {e}")
+    print("[EXIT] 保存完了。終了します。")
+    os._exit(0)
+
+signal.signal(signal.SIGINT, _graceful_exit)
+signal.signal(signal.SIGTERM, _graceful_exit)
 
 # ── 全キャッシュ済み財務データを一括返却（フロントのfinsCache復元用） ──
 @app.route("/proxy/fins_all")
@@ -223,6 +258,49 @@ def fins_all():
     valid = {k: v for k, v in fins_cache.items() if v}
     print(f"[FINS_ALL] {len(valid)}件を返却")
     return jsonify({"data": valid, "count": len(valid)})
+
+# ── Yahoo Finance 現在株価（横バーの⭐プロット用・スロットリング対象外） ──
+# yfinanceライブラリ使用（cookie/crumb認証を自動処理）
+try:
+    import yfinance as yf
+    _HAS_YFINANCE = True
+    print("[REALTIME] yfinance利用可能")
+except ImportError:
+    _HAS_YFINANCE = False
+    print("[REALTIME] yfinance未インストール → pip install yfinance")
+
+@app.route("/proxy/realtime")
+def realtime():
+    codes_param = request.args.get("codes", "")
+    if not codes_param:
+        return jsonify({"error": "codesを指定してください"}), 400
+    if not _HAS_YFINANCE:
+        return jsonify({"data": {}, "error": "yfinance未インストール"})
+    code_list = [c.strip() for c in codes_param.split(",") if c.strip()][:20]
+    results = {}
+    for code5 in code_list:
+        ticker = code5[:4] + ".T"
+        try:
+            t = yf.Ticker(ticker)
+            info = t.fast_info
+            price = getattr(info, "last_price", None)
+            prev  = getattr(info, "previous_close", None)
+            if price is None and prev is not None:
+                price = prev
+            if price is None:
+                continue
+            change = round((price - prev) / prev * 100, 2) if prev else 0
+            results[code5] = {
+                "price":     round(price, 1),
+                "prevClose": round(prev, 1) if prev else None,
+                "change":    change,
+                "time":      None,
+                "isPrev":    getattr(info, "last_price", None) is None,
+            }
+        except Exception as e:
+            print(f"[REALTIME] {code5} エラー: {e}")
+    print(f"[REALTIME] {len(results)}/{len(code_list)}件")
+    return jsonify({"data": results})
 
 if __name__ == "__main__":
     valid = sum(1 for v in fins_cache.values() if v)

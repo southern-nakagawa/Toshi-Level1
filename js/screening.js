@@ -84,7 +84,8 @@ function calcScreenResults(codes,prices,filters){
       eq:Math.round(eq*1000)/10,
       pbr:Math.round(pbr*100)/100,
       divYield, vt,
-      condScore:_cond?_cond.score:null
+      condScore:_cond?_cond.score:null,
+      sharpe:sharpeCache[code]?sharpeCache[code].sharpe:null
     });
   }
   return results;
@@ -206,7 +207,7 @@ async function showWatchlistResults(){
         price:0,theory:0,upper:0,asset:0,business:0,
         alpha:null,level:"データ不足",lcolor:"#6b7280",
         bps:0,fEps:0,roa:0,eq:0,pbr:0,divYield:0,vt:false,
-        condScore:null,incomplete:true
+        condScore:null,sharpe:null,incomplete:true
       });
     }
   });
