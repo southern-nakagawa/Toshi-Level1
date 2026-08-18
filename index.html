@@ -92,6 +92,7 @@
       <button class="btn-sm" id="cache-clear-btn" data-tip="キャッシュを全消去して最新データを取り直します。&#10;次回スクリーニングで再収集されます（時間がかかります）">🗑 キャッシュ</button>
       <span class="badge-ok">● 接続中</span>
       <button class="btn-sm" id="disconnect-btn">切断</button>
+      <button class="btn-sm" id="shutdown-btn" data-tip="proxy(Python)を安全に停止します。&#10;キャッシュを保存してから終了します" style="border-color:rgba(239,68,68,.5);color:#f87171">⏻ 停止</button>
     </div>
   </header>
 
@@ -159,8 +160,6 @@
           <th class="sortable" data-key="divYield" data-tip="配当利回り（%）">配当利回り%<span class="sort-ind"></span></th>
           <th data-tip="東証33業種分類">業種</th>
           <th class="sortable" data-key="condScore" data-tip="企業価値コア4条件の適合数（0〜4）。&#10;詳細を一度開いた銘柄のみ表示。未評価は「—」&#10;正相関度・割安修正・持続成長・配当成長の4条件で判定">コア条件<span class="sort-ind"></span></th>
-          <th class="sortable" data-key="sharpe" data-tip="シャープレシオ（過去最大2年・年率換算・無リスク金利1.0%）。&#10;詳細を一度開いた銘柄のみ表示。未評価は「—」&#10;1.0以上で良好、2.0以上で優秀とされる目安">シャープ<span class="sort-ind"></span></th>
-          <th class="sortable" data-key="opm" data-tip="営業利益率（%）= 営業利益 ÷ 売上高 × 100&#10;高いほど本業の収益力が高い。10%以上が優良企業の目安">営業利益率%<span class="sort-ind"></span></th>
         </tr></thead>
         <tbody id="results-tbody"></tbody>
       </table>

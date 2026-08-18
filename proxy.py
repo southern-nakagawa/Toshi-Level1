@@ -260,47 +260,67 @@ def fins_all():
     return jsonify({"data": valid, "count": len(valid)})
 
 # ── Yahoo Finance 現在株価（横バーの⭐プロット用・スロットリング対象外） ──
-# yfinanceライブラリ使用（cookie/crumb認証を自動処理）
-try:
-    import yfinance as yf
-    _HAS_YFINANCE = True
-    print("[REALTIME] yfinance利用可能")
-except ImportError:
-    _HAS_YFINANCE = False
-    print("[REALTIME] yfinance未インストール → pip install yfinance")
-
+# v8 chart APIを使用（認証不要）。現在値が無い場合（相場開始前など）は前回終値を使用。
 @app.route("/proxy/realtime")
 def realtime():
     codes_param = request.args.get("codes", "")
     if not codes_param:
         return jsonify({"error": "codesを指定してください"}), 400
-    if not _HAS_YFINANCE:
-        return jsonify({"data": {}, "error": "yfinance未インストール"})
     code_list = [c.strip() for c in codes_param.split(",") if c.strip()][:20]
     results = {}
     for code5 in code_list:
         ticker = code5[:4] + ".T"
         try:
-            t = yf.Ticker(ticker)
-            info = t.fast_info
-            price = getattr(info, "last_price", None)
-            prev  = getattr(info, "previous_close", None)
-            if price is None and prev is not None:
+            r = requests.get(
+                f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}",
+                params={"range": "5d", "interval": "1d"},
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+                    "Accept": "application/json",
+                },
+                timeout=10
+            )
+            res = (r.json().get("chart") or {}).get("result") or []
+            if not res:
+                continue
+            meta = res[0].get("meta") or {}
+            prev = meta.get("previousClose") or meta.get("chartPreviousClose")
+            price = meta.get("regularMarketPrice")
+            # 相場開始前・休場時は現在値が無いので前回終値を使用
+            if price is None:
                 price = prev
             if price is None:
                 continue
             change = round((price - prev) / prev * 100, 2) if prev else 0
             results[code5] = {
-                "price":     round(price, 1),
-                "prevClose": round(prev, 1) if prev else None,
+                "price":     price,
+                "prevClose": prev,
                 "change":    change,
-                "time":      None,
-                "isPrev":    getattr(info, "last_price", None) is None,
+                "time":      meta.get("regularMarketTime"),
+                "isPrev":    meta.get("regularMarketPrice") is None,  # 前回終値を使ったか
             }
         except Exception as e:
             print(f"[REALTIME] {code5} エラー: {e}")
     print(f"[REALTIME] {len(results)}/{len(code_list)}件")
     return jsonify({"data": results})
+
+# ── ブラウザから安全に停止（キャッシュ保存してから終了） ──────────────
+@app.route("/proxy/shutdown", methods=["POST", "OPTIONS"])
+def shutdown():
+    if request.method == "OPTIONS":
+        return ("", 204)
+    print("\n[SHUTDOWN] ブラウザから停止要求を受信。キャッシュ保存中…")
+    try:
+        save_all()
+    except Exception as e:
+        print(f"[SHUTDOWN] 保存エラー: {e}")
+    # レスポンスを返してから終了するため、別スレッドで少し遅延して終了
+    def _die():
+        time.sleep(0.5)
+        print("[SHUTDOWN] 終了します。")
+        os._exit(0)
+    threading.Thread(target=_die, daemon=True).start()
+    return jsonify({"ok": True, "message": "キャッシュを保存して終了します"})
 
 if __name__ == "__main__":
     valid = sum(1 for v in fins_cache.values() if v)
