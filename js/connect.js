@@ -144,3 +144,25 @@ async function loadCachedFins(){
     updateBgUI();
   });
 })();
+
+// ══ proxy(Python) 停止ボタン ══════════════════════════════════════
+(function(){
+  const btn=document.getElementById("shutdown-btn");
+  if(!btn)return;
+  btn.addEventListener("click",async()=>{
+    if(!confirm("proxy（Python）を停止しますか？\n\nキャッシュを保存してから終了します。\n停止後はブラウザからデータを取得できなくなります（再起動が必要）。"))return;
+    btn.disabled=true;btn.textContent="停止中…";
+    try{
+      await fetch(`${PROXY}/proxy/shutdown`,{method:"POST"});
+    }catch(e){
+      // 終了時は接続が切れてfetchが失敗することがあるが正常
+    }
+    document.body.innerHTML='<div style="display:flex;align-items:center;justify-content:center;'
+      +'height:100vh;flex-direction:column;gap:16px;color:#e2e8f0;font-family:sans-serif">'
+      +'<div style="font-size:40px">⏻</div>'
+      +'<div style="font-size:18px">proxy を停止しました</div>'
+      +'<div style="font-size:13px;color:#94a3b8">キャッシュは保存済みです。'
+      +'再開するには「理論株価スクリーナー.command」を再度起動してください。</div>'
+      +'</div>';
+  });
+})();
