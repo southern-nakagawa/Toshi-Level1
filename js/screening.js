@@ -37,6 +37,7 @@ function calcScreenResults(codes,prices,filters){
     const eq    =safe(stmt.EqAR||stmt.EquityToAssetRatio);
     const op    =safe(stmt.OdP||stmt.OP||stmt.OperatingProfit);
     const shares=safe(stmt.ShOutFY||stmt.NumberOfSharesIssued);
+    const ns    =safe(stmt.Sales||stmt.NetSales);
     if(bps<=0||ta<=0||shares<=0)continue;
     // 四半期は経常利益を年率換算
     const qNS={'1Q':1,'2Q':2,'3Q':3,'FY':4}[stmt.CurPerType]||4;
@@ -85,7 +86,8 @@ function calcScreenResults(codes,prices,filters){
       pbr:Math.round(pbr*100)/100,
       divYield, vt,
       condScore:_cond?_cond.score:null,
-      sharpe:sharpeCache[code]?sharpeCache[code].sharpe:null
+      sharpe:sharpeCache[code]?sharpeCache[code].sharpe:null,
+      opm:ns>0?Math.round(op/ns*1000)/10:null
     });
   }
   return results;
@@ -207,7 +209,7 @@ async function showWatchlistResults(){
         price:0,theory:0,upper:0,asset:0,business:0,
         alpha:null,level:"データ不足",lcolor:"#6b7280",
         bps:0,fEps:0,roa:0,eq:0,pbr:0,divYield:0,vt:false,
-        condScore:null,sharpe:null,incomplete:true
+        condScore:null,sharpe:null,opm:null,incomplete:true
       });
     }
   });

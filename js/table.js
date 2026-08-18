@@ -59,7 +59,8 @@ function renderTable(rows){
           '⚠ データ取得不可（株価・財務データなし。上場廃止・取引停止等の可能性）</td>'+
         '<td style="color:var(--muted);font-size:11px">'+(r.sector||"").replace("\u696d","")+'</td>'+
         '<td class="td-cond"></td>'+
-        '<td class="td-sharpe"></td>';
+        '<td class="td-sharpe"></td>'+
+        '<td class="num">—</td>';
       tr.addEventListener("click",function(){
         document.querySelectorAll("#results-tbody tr").forEach(function(t){t.classList.remove("active");});
         tr.classList.add("active");
@@ -89,7 +90,8 @@ function renderTable(rows){
       '<td style="color:var(--muted);font-size:11px">'+
         (r.sector||"").replace("\u696d","")+'</td>'+
       buildCondCell(r.code)+
-      buildSharpeCell(r.code);
+      buildSharpeCell(r.code)+
+      '<td class="num'+(r.opm!==null?(r.opm>=10?' pos':r.opm<5?' neg':''):'')+'">'+(r.opm!==null?fmtPct1(r.opm)+'%':'—')+'</td>';
     tr.addEventListener("click",function(){
       document.querySelectorAll("#results-tbody tr").forEach(function(t){t.classList.remove("active");});
       tr.classList.add("active");

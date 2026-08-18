@@ -105,44 +105,51 @@ find . -type d \( -name cache -o -name .git -o -name __pycache__ \) -prune -o -p
 - 2段階計算：BG時は③④のみ(bgOnly:true)、詳細表示で①②③④完全計算し上書き
 - リスト最右にドット4つ表示。condScore ソートは condCache 動的参照
 
-### 5.4 シャープレシオ
+### 5.4 営業利益率（OPM）
+- 営業利益率 = 営業利益 ÷ 売上高 × 100（現在は `OdP` ベース）
+- 一覧テーブル最右列（ソート可能）＋詳細パネル財務履歴テーブルに表示
+- screening.js の `calcScreenResults` で算出（`opm` フィールド）
+- 色分け：10%以上 green / 5%未満 red / それ以外 標準
+- 売上高ゼロの銘柄（金融業等）は「—」表示
+
+### 5.5 シャープレシオ
 - **2年・年率換算(×√252)・無リスク金利1.0%**
 - state.js に sharpeCache（localStorage永続化・condCacheパターン踏襲）
 - detail.js に calcSharpe＋詳細カード（renderSharpeBlock）、table.js に列（buildSharpeCell/updateRowSharpe）
 - screening.js に sharpe フィールド（ソート用）、index.html にソート可能な「シャープ」列ヘッダ
 
-### 5.5 現在株価⭐バー（detail.js / proxy.py）
+### 5.6 現在株価⭐バー（detail.js / proxy.py）
 - 詳細パネルの「株価水準イメージ」バーに現在株価を⭐でプロット
 - Yahoo Finance v8 chart API 経由（認証不要）。現在値が無い場合（相場前・休場）は**前回終値**を使用（「前終」タグ表示）
 - 表示：現在株価・**90日前比**（データ基準日の株価からの騰落率・上昇で+%）・α値
 - **チャート完全非干渉**：fetchRTBar を setTimeout でイベントループ後に実行。過去に fetch が try-catch 内でチャートを壊した経緯あり
 - ⭐は `overflow:visible`＋`z-index`＋`text-shadow` で上下切れ回避
 
-### 5.6 ウォッチリスト（watchlist.js）
+### 5.7 ウォッチリスト（watchlist.js）
 - **名前付き複数グループ**（タブ切替・新規/名前変更/削除・ドラッグ並び替え）
 - コード/社名オートコンプリート（**IMEガード** `isComposing`/`keyCode===229` で変換確定Enter誤登録を防止）
 - 詳細からの登録は openWatchPicker でリスト選択ポップアップ（複数リストへ同時登録可）
 - 一括株価に無い銘柄は個別株価を補完取得、計算不可でも incompleteRow で全件表示
 
-### 5.7 キャッシュ・鮮度・日付
+### 5.8 キャッシュ・鮮度・日付
 - 接続時 `loadCachedFins()` が `/proxy/fins_all` から全財務を復元（**fins_all は app.run() の前に定義。後ろだとデッドコードで404**）
 - **freshCodes**（セッション限定Set）：復元キャッシュ=薄い、BG取得/詳細閲覧=標準。BGが暗い銘柄を1.2秒毎に順次明るく（brightenRow）
 - **日付自動更新**：detectLatestPriceDate が1日1回トヨタ(72030)プローブで最新営業日を再検出（screener_detect_day で判定）
 - ヘッダーに「🗑 キャッシュ」クリアボタン（ウォッチリストは消えない）
 
-### 5.8 proxy.py 安定性
+### 5.9 proxy.py 安定性
 - スロットリング **threading.Lock** でスレッドセーフ化（同時実行の429防止）。RATE_INTERVAL=14秒
 - **atomic write**：save_json は `.tmp` に書込→`os.fsync`→`os.replace`
 - **SIGINTハンドラ**で Ctrl+C 連打を無視し保存を完了してから終了（`_saving` フラグ）
 
-### 5.9 proxy.py エンドポイント
+### 5.10 proxy.py エンドポイント
 `/proxy/connect` `/disconnect` `/status` `/master` `/prices(date=一括/code=個別)` `/fins(code=)` `/fins_all(全キャッシュ一括・app.run前)` `/realtime(Yahoo Finance現在値・v8 chart)` `/cache_info` `/cache_clear`
 
 ---
 
 ## 6. 現在地・次の一手
 
-- **今どこ：** 安定稼働中。シャープレシオ実装完了（5ファイル）。直近は Mac ランチャー `.command` の起動トラブルを解決（実行ビット `chmod +x` を付与。VSCodeターミナルの `bash ファイル名` 実行では不要だが、ダブルクリック/`./` 実行には必須。実行ビットはGitが記録するのでコミットで維持される）。
+- **今どこ：** 安定稼働中。営業利益率（OPM）カラム追加完了（4ファイル: screening.js / table.js / detail.js / index.html）。一覧テーブル（ソート可能）＋詳細パネル財務履歴テーブルの両方に表示。計算元は現時点では `OdP`（経常利益）ベース。J-Quants の `OperatingProfit` フィールドが別に存在する場合、名称と計算元の乖離を要確認。
 - **次やる：** 特に確定タスクなし。候補は §17相当の未実装項目（チャート期間切替・CSVエクスポート・移動平均線・IRカレンダー 等）。
 
 ---

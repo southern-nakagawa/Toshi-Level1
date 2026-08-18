@@ -192,7 +192,8 @@ async function loadDetail(code,screened){
           bps:Math.round(_bps/sf),fEps:Math.round(_fEps/sf*10)/10,fEpsNote,
           roa:Math.round(_roa*1000)/10,eq:Math.round(_eqN*1000)/10,
           sales:Math.round(_ns/1e8*10)/10,opProfit:Math.round(_op/1e8*10)/10,
-          div:Math.round(_div/sf*10)/10,div4:_div>0?Math.round(_div/0.04/sf):0
+          div:Math.round(_div/sf*10)/10,div4:_div>0?Math.round(_div/0.04/sf):0,
+          opm:_ns>0?Math.round(_op/_ns*1000)/10:null
         });
       });
       return out;
@@ -410,7 +411,7 @@ ${d.hist.length?`<div class="hist-wrap"><h4>財務履歴</h4>
     <th data-tip="はっしゃん式理論株価（PBR=1基準）">理論株価</th>
     <th>BPS</th>
     <th data-tip="予=当期年間予想 実=実績OdP 推=FOdP無・年率換算推計">予想EPS</th>
-    <th>ROA%</th><th>自己資本比率%</th><th>売上(億)</th><th>経常利益(億)</th>
+    <th>ROA%</th><th>自己資本比率%</th><th>売上(億)</th><th>経常利益(億)</th><th>営業利益率%</th>
   </tr></thead><tbody>
   ${d.hist.map(h=>`<tr class="${h.isFY?"":"hist-q-row"}">
     <td style="${h.isFY?"":"color:var(--muted);font-size:12px"}">${h.period}</td>
@@ -421,6 +422,7 @@ ${d.hist.length?`<div class="hist-wrap"><h4>財務履歴</h4>
     <td class="${h.eq>=50?"pos":h.eq<30?"neg":""}">${fmtPct1(h.eq)}%</td>
     <td>${h.sales}</td>
     <td class="${h.opProfit>0?"pos":"neg"}">${h.opProfit}</td>
+    <td class="${h.opm!==null?(h.opm>=10?"pos":h.opm<5?"neg":""):""}">${h.opm!==null?fmtPct1(h.opm)+"%":"—"}</td>
   </tr>`).join("")}
   </tbody></table></div>`:""}
 <div id="cond-block"></div>
