@@ -67,6 +67,22 @@ function liquidityRisk(mc){
   return{label:'流動性 高リスク',color:'#ef4444',note:'売買が成立しにくい場合あり'};
 }
 
+// ══ 財務キャッシュの陳腐化判定 ════════════════════════════════════
+// 最新FYレコードのBPSが空（＝通期予想の枠のみ）で、かつ期末から
+// STALE_DAYS 経過していれば「本決算が到達しているはず」と判断する。
+const STALE_DAYS=150;
+function isFinsStale(stmts){
+  if(!stmts||!stmts.length)return false;
+  const fys=stmts.filter(s=>s.CurPerType==="FY"&&s.CurFYEn);
+  if(!fys.length)return false;
+  const latest=fys[fys.length-1];
+  if(safe(latest.BPS)>0)return false;              // 実績あり → 最新
+  const end=new Date(latest.CurFYEn+"T00:00:00Z");
+  if(isNaN(end))return false;
+  const days=(Date.now()-end.getTime())/86400000;
+  return days>=STALE_DAYS;
+}
+
 // ══ 詳細パネル ══════════════════════════════════════════════════
 async function loadDetail(code,screened){
   activeCode=code;
@@ -81,10 +97,16 @@ async function loadDetail(code,screened){
     const myCode=code;
     const info=(masterCache||[]).find(s=>s.Code===code)||{};
     let stmts;
-    if(finsCache[code]&&finsCache[code].length){
+    if(finsCache[code]&&finsCache[code].length&&!isFinsStale(finsCache[code])){
       stmts=finsCache[code];
     }else{
-      const fr=await fetch(`${PROXY}/proxy/fins?code=${code}`).then(r=>r.json());
+      const _stale=finsCache[code]&&finsCache[code].length;
+      if(_stale){
+        dc.innerHTML='<div class="loading-wrap" style="padding:40px"><div class="spinner"></div><div class="loading-text">決算更新を確認中\u2026（約14秒）</div></div>';
+        delete condCache[code];
+        if(typeof saveCondCache==="function")saveCondCache();
+      }
+      const fr=await fetch(`${PROXY}/proxy/fins?code=${code}`+(_stale?"&force=1":"")).then(r=>r.json());
       if(activeCode!==myCode){detailLoading=false;return;}
       stmts=Array.isArray(fr.data)?fr.data:(fr.data?[fr.data]:[]);
       finsCache[code]=stmts;
@@ -293,6 +315,7 @@ function renderDetail(d){
   </div>
 </div>
 <div class="ext-links">
+  <button class="ext-link" id="refetch-btn" style="cursor:pointer;background:none" data-tip="この銘柄の財務データだけを再取得します（約14秒）。&#10;決算発表後に最新の実績値へ更新したいときに使用">🔄 財務再取得</button>
   <span style="font-size:11px;color:var(--muted);align-self:center;flex-shrink:0">外部リンク:</span>
   <a class="ext-link" href="https://irbank.net/${d.code.slice(0,4)}/results" target="_blank"
     data-tip="IR Bank: 過去10年の財務データを無料閲覧（最も詳細）">📊 IR Bank</a>
@@ -429,6 +452,22 @@ ${d.hist.length?`<div class="hist-wrap"><h4>財務履歴</h4>
 <div style="height:24px"></div>`;
 
   document.getElementById("close-detail").addEventListener("click",closeDetail);
+  const _rfBtn=document.getElementById("refetch-btn");
+  if(_rfBtn)_rfBtn.addEventListener("click",async function(){
+    _rfBtn.disabled=true;_rfBtn.textContent="🔄 取得中…";
+    try{
+      const r=await fetch(PROXY+"/proxy/fins?code="+d.code+"&force=1");
+      const j=await r.json();
+      if(j.error)throw new Error(j.error);
+      finsCache[d.code]=j.data||[];
+      delete condCache[d.code];
+      if(typeof saveCondCache==="function")saveCondCache();
+      loadDetail(d.code,null);
+    }catch(e){
+      _rfBtn.disabled=false;_rfBtn.textContent="🔄 再取得失敗";
+      console.warn("[REFETCH]",e);
+    }
+  });
   document.getElementById("watch-btn").addEventListener("click",(e)=>{
     if(typeof openWatchPicker==="function"){
       openWatchPicker(d.code,d.info,e.currentTarget);

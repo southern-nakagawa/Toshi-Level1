@@ -207,15 +207,21 @@ def prices():
 def fins():
     if not mem["api_key"]: return jsonify({"error": "未接続"}), 401
     try:
-        code = request.args.get("code", "")
-        if code and code in fins_cache:
+        code  = request.args.get("code", "")
+        force = request.args.get("force", "") in ("1", "true", "yes")
+        if code and code in fins_cache and not force:
             return jsonify({"data": fins_cache[code], "from_cache": True})
+        if force and code:
+            print(f"[FINS] 強制再取得: {code}")
         d    = jget("/v2/fins/summary", {"code": code} if code else {})
         data = d.get("data", [])
         if code:
             fins_cache[code] = data
             valid = sum(1 for v in fins_cache.values() if v)
-            if valid % 20 == 0 and valid > 0:
+            if force:
+                save_json(FINS_CACHE_FILE, fins_cache)
+                print(f"[CACHE] 強制再取得を即保存: {code} / 有効{valid}銘柄")
+            elif valid % 20 == 0 and valid > 0:
                 save_json(FINS_CACHE_FILE, fins_cache)
                 print(f"[CACHE] 財務保存: 有効{valid} / 総{len(fins_cache)}銘柄")
         return jsonify({"data": data})

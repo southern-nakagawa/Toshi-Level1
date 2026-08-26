@@ -142,15 +142,23 @@ find . -type d \( -name cache -o -name .git -o -name __pycache__ \) -prune -o -p
 - **atomic write**：save_json は `.tmp` に書込→`os.fsync`→`os.replace`
 - **SIGINTハンドラ**で Ctrl+C 連打を無視し保存を完了してから終了（`_saving` フラグ）
 
-### 5.10 proxy.py エンドポイント
-`/proxy/connect` `/disconnect` `/status` `/master` `/prices(date=一括/code=個別)` `/fins(code=)` `/fins_all(全キャッシュ一括・app.run前)` `/realtime(Yahoo Finance現在値・v8 chart)` `/cache_info` `/cache_clear`
+### 5.10 財務キャッシュの鮮度管理（銘柄単位）
+- **背景**：J-Quants の fins は開示ごとにレコードが積まれる。3Q短信に含まれる「通期予想」枠は FY レコードだが BPS が空。本決算（5月頃開示・Free は約90日遅延で8月中旬到達）が来ると BPS 入りの FY 実績レコードが**別途追加**される
+- 基準レコード選択は「BPS>0の最新」なので、本決算未取得だと直前3Qが採用され「決算が古い」ように見える（設計通りの動作）
+- **`/proxy/fins?code=&force=1`**：キャッシュを無視して再取得＋**即保存**（通常の `valid % 20` 条件をバイパス）
+- **自動再取得（B案）**：detail.js の `isFinsStale()` が「最新FYのBPSが空」かつ「期末から `STALE_DAYS`(150日) 経過」を判定。該当時のみ詳細表示で自動 force 取得＋condCache破棄
+- **手動再取得**：詳細パネルの外部リンク列先頭に「🔄 財務再取得」ボタン（`refetch-btn`）
+- **既知の制約**：`/proxy/prices?code=` はキャッシュを見ず毎回 jget → 詳細表示は必ず14秒待ち。財務も取ると `_throttle_lock` で直列化し計28秒。5req/min が根本原因のため回避不可（改善するなら個別株価キャッシュの導入）
+
+### 5.11 proxy.py エンドポイント
+`/proxy/connect` `/disconnect` `/status` `/master` `/prices(date=一括/code=個別)` `/fins(code=&force=1)` `/fins_all(全キャッシュ一括・app.run前)` `/realtime(Yahoo Finance現在値・v8 chart)` `/cache_info` `/cache_clear`
 
 ---
 
 ## 6. 現在地・次の一手
 
-- **今どこ：** 安定稼働中。営業利益率（OPM）カラム追加完了（4ファイル: screening.js / table.js / detail.js / index.html）。一覧テーブル（ソート可能）＋詳細パネル財務履歴テーブルの両方に表示。計算元は現時点では `OdP`（経常利益）ベース。J-Quants の `OperatingProfit` フィールドが別に存在する場合、名称と計算元の乖離を要確認。
-- **次やる：** 特に確定タスクなし。候補は §17相当の未実装項目（チャート期間切替・CSVエクスポート・移動平均線・IRカレンダー 等）。
+- **今どこ：** 安定稼働中。営業利益率（OPM）カラム追加完了（4ファイル: screening.js / table.js / detail.js / index.html）。一覧テーブル（ソート可能）＋詳細パネル財務履歴テーブルの両方に表示。計算元は現時点では `OdP`（経常利益）ベース。J-Quants の `OperatingProfit` フィールドが別に存在する場合、名称と計算元の乖離を要確認。加えて財務キャッシュの銘柄単位再取得を実装（§5.10）。ライト工業(19260)で2026年3月期本決算の取得を確認済み。
+- **次やる：** 特に確定タスクなし。候補は §17相当の未実装項目（チャート期間切替・CSVエクスポート・移動平均線・IRカレンダー 等）＋個別株価キャッシュ（詳細表示の14秒待ち解消）。
 
 ---
 
@@ -158,6 +166,7 @@ find . -type d \( -name cache -o -name .git -o -name __pycache__ \) -prune -o -p
 
 - **`.command` ランチャーの軽微な挙動（保留）：** proxy 起動済みの場合、`PROXY_PID` 未設定のまま `wait` に到達しウィンドウが即閉じる。ブラウザは開くので実害なし。気になれば要修正。
 - **proxy.py はAPIキーをメモリのみ保持** → 再起動のたびに再入力が必要（仕様・既存挙動）。
+- **詳細表示は毎回14秒待ち**（個別株価が未キャッシュのため）。本決算未到達の銘柄は `isFinsStale()` が毎回 true となり財務再取得も走るので計28秒になる。頻発する場合は `STALE_DAYS` を延ばすか、再取得済みフラグの導入を検討。
 - **チャート系変更は要注意** → 現在株価取得(fetchRTBar)は setTimeout で完全分離済み。チャートに触る変更時は破損の再発に注意。
 - **updateRowBadge の重複定義禁止**（table.js のみ）。
 - **emptyFinsCodes 系の恒久除外最適化は導入しない**（過去にゼロ件表示を招いた）。
