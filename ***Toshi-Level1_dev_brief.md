@@ -150,8 +150,21 @@ find . -type d \( -name cache -o -name .git -o -name __pycache__ \) -prune -o -p
 - **手動再取得**：詳細パネルの外部リンク列先頭に「🔄 財務再取得」ボタン（`refetch-btn`）
 - **既知の制約**：`/proxy/prices?code=` はキャッシュを見ず毎回 jget → 詳細表示は必ず14秒待ち。財務も取ると `_throttle_lock` で直列化し計28秒。5req/min が根本原因のため回避不可（改善するなら個別株価キャッシュの導入）
 
-### 5.11 proxy.py エンドポイント
-`/proxy/connect` `/disconnect` `/status` `/master` `/prices(date=一括/code=個別)` `/fins(code=&force=1)` `/fins_all(全キャッシュ一括・app.run前)` `/realtime(Yahoo Finance現在値・v8 chart)` `/cache_info` `/cache_clear`
+### 5.11 財務履歴のマージ保持（A案）
+- **背景**：J-Quants が返す期間は過去に向かって切り詰められる可能性があり、force再取得で丸ごと差し替えると古いレコードが失われ、コア条件（③持続成長・④配当成長）の精度が落ちる
+- **`merge_fins(old, new)`**（proxy.py）：既存キャッシュと新規取得を和集合でマージ。キーは `(CurFYEn, CurPerType)`
+- 同一キーは新側で上書きするが、**新側のBPSが空かつ旧側に実績があれば旧を残す**（3Q短信の通期予想枠が本決算の実績を潰すのを防ぐ）
+- 返却はキーの辞書順ソート。`CurPerType` は "1Q"<"2Q"<"3Q"<"FY" となるため同一期内も正しい順序（**各所が「配列末尾＝最新」を前提にしているため順序維持は必須**）
+- force再取得時のみマージ。通常取得（初回）はそのまま保存
+
+### 5.12 キャッシュクリアの分離（A＋B案）
+- **背景**：マージ実装により財務履歴が「再取得では復元できない資産」になったため、全消去の危険度が上昇
+- **既定は財務を消さない**：`/proxy/cache_clear` は株価・マスターのみクリア。財務は `?fins=1` 指定時のみ
+- **退避**：財務を消す場合も `fins_cache.json` → `fins_cache.json.bak` へ `os.replace` でリネーム（削除ではない）
+- **フロント**：connect.js のクリアボタンは二段階confirm。1段目=株価等の確認、2段目=「財務も消すか」（キャンセルが推奨側）。`alsoFins` が false ならフロントの `finsCache` も保持
+
+### 5.13 proxy.py エンドポイント
+`/proxy/connect` `/disconnect` `/status` `/master` `/prices(date=一括/code=個別)` `/fins(code=&force=1)` `/fins_all(全キャッシュ一括・app.run前)` `/realtime(Yahoo Finance現在値・v8 chart)` `/cache_info` `/cache_clear(?fins=1で財務も消去)` `/shutdown`
 
 ---
 
@@ -159,6 +172,7 @@ find . -type d \( -name cache -o -name .git -o -name __pycache__ \) -prune -o -p
 
 - **今どこ：** 安定稼働中。営業利益率（OPM）カラム追加完了（4ファイル: screening.js / table.js / detail.js / index.html）。一覧テーブル（ソート可能）＋詳細パネル財務履歴テーブルの両方に表示。計算元は現時点では `OdP`（経常利益）ベース。J-Quants の `OperatingProfit` フィールドが別に存在する場合、名称と計算元の乖離を要確認。加えて財務キャッシュの銘柄単位再取得を実装（§5.10）。ライト工業(19260)で2026年3月期本決算の取得を確認済み。
 - **次やる：** 特に確定タスクなし。候補は §17相当の未実装項目（チャート期間切替・CSVエクスポート・移動平均線・IRカレンダー 等）＋個別株価キャッシュ（詳細表示の14秒待ち解消）。
+- **未検証：** マージ実装後の force 再取得でレコードが目減りしないこと、二段階confirmの動作、`.bak` への退避。次回起動時に実地確認すること。
 
 ---
 
@@ -167,6 +181,7 @@ find . -type d \( -name cache -o -name .git -o -name __pycache__ \) -prune -o -p
 - **`.command` ランチャーの軽微な挙動（保留）：** proxy 起動済みの場合、`PROXY_PID` 未設定のまま `wait` に到達しウィンドウが即閉じる。ブラウザは開くので実害なし。気になれば要修正。
 - **proxy.py はAPIキーをメモリのみ保持** → 再起動のたびに再入力が必要（仕様・既存挙動）。
 - **詳細表示は毎回14秒待ち**（個別株価が未キャッシュのため）。本決算未到達の銘柄は `isFinsStale()` が毎回 true となり財務再取得も走るので計28秒になる。頻発する場合は `STALE_DAYS` を延ばすか、再取得済みフラグの導入を検討。
+- **財務キャッシュは再取得では復元できない**（マージで積み上げた過去レコードはAPIが返さなくなると戻らない）。`fins_cache.json` は実質的な資産。バックアップを取る価値がある。
 - **チャート系変更は要注意** → 現在株価取得(fetchRTBar)は setTimeout で完全分離済み。チャートに触る変更時は破損の再発に注意。
 - **updateRowBadge の重複定義禁止**（table.js のみ）。
 - **emptyFinsCodes 系の恒久除外最適化は導入しない**（過去にゼロ件表示を招いた）。

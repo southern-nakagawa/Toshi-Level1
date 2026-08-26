@@ -53,6 +53,33 @@ print(f"[CACHE] キャッシュ変換: {valid_on_load}銘柄")
 master_cache = load_json(MASTER_CACHE_FILE)
 price_cache  = load_json(PRICE_CACHE_FILE) or {}
 
+def _fins_key(s):
+    # レコードの一意キー: 会計期末 + 期種別（1Q/2Q/3Q/FY）
+    return (s.get("CurFYEn") or "", s.get("CurPerType") or "")
+
+def merge_fins(old, new):
+    """既存キャッシュと新規取得を和集合でマージ（A案）。
+    同一キーは新しい方で上書きするが、新側のBPSが空で旧側に実績が
+    あれば旧を残す（予想枠が実績を潰すのを防ぐ）。
+    APIが返す期間が過去に向かって切り詰められても履歴を保持できる。
+    """
+    merged = {}
+    for s in (old or []):
+        merged[_fins_key(s)] = s
+    for s in (new or []):
+        k = _fins_key(s)
+        prev = merged.get(k)
+        if prev is not None:
+            try:
+                new_bps = float(s.get("BPS") or 0)
+                old_bps = float(prev.get("BPS") or 0)
+            except (TypeError, ValueError):
+                new_bps = old_bps = 0
+            if new_bps <= 0 and old_bps > 0:
+                continue   # 予想枠で実績を上書きしない
+        merged[k] = s
+    return [merged[k] for k in sorted(merged.keys())]
+
 def cors(resp):
     resp.headers["Access-Control-Allow-Origin"]  = "*"
     resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
@@ -135,13 +162,32 @@ def cache_info():
 
 @app.route("/proxy/cache_clear", methods=["POST", "OPTIONS"])
 def cache_clear():
+    """既定では株価・マスターのみクリア（B案）。
+    fins=1 指定時のみ財務も消すが、その際は .bak へ退避する（A案）。
+    財務は1銘柄14秒の取得コストがあり、マージで積み上げた履歴は
+    再取得しても復元できないため、明示指定がない限り温存する。
+    """
     if request.method == "OPTIONS": return cors(Response())
     global fins_cache, master_cache, price_cache
-    fins_cache = {}; master_cache = None; price_cache = {}
-    for f in [FINS_CACHE_FILE, MASTER_CACHE_FILE, PRICE_CACHE_FILE]:
+    clear_fins = request.args.get("fins", "") in ("1", "true", "yes")
+    master_cache = None; price_cache = {}
+    for f in [MASTER_CACHE_FILE, PRICE_CACHE_FILE]:
         try: os.remove(f)
         except: pass
-    return jsonify({"ok": True})
+    backup = None
+    if clear_fins:
+        if os.path.exists(FINS_CACHE_FILE):
+            backup = FINS_CACHE_FILE + ".bak"
+            try:
+                os.replace(FINS_CACHE_FILE, backup)
+                print(f"[CACHE] 財務キャッシュを退避: {backup}")
+            except Exception as e:
+                print(f"[CACHE] 退避失敗: {e}")
+                backup = None
+        fins_cache = {}
+    kept = sum(1 for v in fins_cache.values() if v)
+    return jsonify({"ok": True, "fins_cleared": clear_fins,
+                    "fins_kept": kept, "backup": backup})
 
 # ── 銘柄一覧（V2: /v2/listed/info, レスポンスキー: info）──
 @app.route("/proxy/master")
@@ -216,6 +262,8 @@ def fins():
         d    = jget("/v2/fins/summary", {"code": code} if code else {})
         data = d.get("data", [])
         if code:
+            if force and fins_cache.get(code):
+                data = merge_fins(fins_cache[code], data)
             fins_cache[code] = data
             valid = sum(1 for v in fins_cache.values() if v)
             if force:

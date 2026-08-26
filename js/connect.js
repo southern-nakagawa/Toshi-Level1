@@ -122,13 +122,18 @@ async function loadCachedFins(){
   const btn=document.getElementById("cache-clear-btn");
   if(!btn)return;
   btn.addEventListener("click",async()=>{
-    if(!confirm("キャッシュ（財務・株価・コア条件）を全て消去しますか？\n次回スクリーニングで最新データを取り直します（再収集に時間がかかります）。\n\n※ウォッチリストは消えません"))return;
+    if(!confirm("株価・銘柄マスター・コア条件のキャッシュを消去しますか？\n次回スクリーニングで最新の株価を取り直します。\n\n※財務データとウォッチリストは残ります"))return;
+    // 財務は1銘柄14秒＋マージで積み上げた履歴が再取得では戻らないため、
+    // 明示的に二段階で確認したときだけ消す
+    const alsoFins=confirm("財務データも消去しますか？\n\n【OK】財務も消去（全銘柄の再収集に数十分〜数時間かかります）\n【キャンセル】財務は残す（推奨）\n\n※消去する場合も cache/fins_cache.json.bak に退避されます");
     btn.disabled=true;btn.textContent="消去中…";
+    let res={};
     try{
-      await fetch(`${PROXY}/proxy/cache_clear`,{method:"POST"});
+      const r=await fetch(`${PROXY}/proxy/cache_clear`+(alsoFins?"?fins=1":""),{method:"POST"});
+      res=await r.json();
     }catch(e){}
     // フロント側キャッシュも消去
-    finsCache={};
+    if(alsoFins)finsCache={};
     priceCache={};
     condCache={};
     freshCodes=new Set();
@@ -139,7 +144,9 @@ async function loadCachedFins(){
       localStorage.removeItem("screener_bg_next_code");
     }catch(e){}
     bgIndex=0;bgInitialized=false;
-    alert("キャッシュを消去しました。スクリーニングを実行すると最新データを取得します。");
+    alert(alsoFins
+      ? "キャッシュを消去しました（財務含む）。\n退避先: "+(res.backup||"（退避なし）")
+      : "株価・マスター・コア条件を消去しました。\n財務データ "+(res.fins_kept||0)+"銘柄分は保持しています。");
     btn.disabled=false;btn.textContent="🗑 キャッシュ";
     updateBgUI();
   });
